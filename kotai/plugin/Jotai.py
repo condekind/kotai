@@ -7,12 +7,12 @@ from kotai.types import CmdResult, runproc
 
 # --------------------------------------------------------------------------- #
 
-class Clang():
+class Jotai():
 
     # ---------------------------- Static attrs. ---------------------------- #
 
     exe: dict[str, Path] = {
-        'clang': Path('clang'),
+        'jotai': Path('./build/lib/Jotai'),
     }
 
     timeout: float = 3.0
@@ -20,34 +20,23 @@ class Clang():
     # ---------------------------- Member attrs. ---------------------------- #
 
     __slots__ = (
-        'optFlag',
-        'ofile',
-        'ifile',
+        'constraintsPath',
+        'descriptorPath',
     )
 
     # ----------------------------------------------------------------------- #
-    def __init__(self, optFlag: str, ofile: Path, ifile: Path):
-        self.optFlag: str = optFlag
-        self.ofile: Path  = ofile
-        self.ifile: Path  = ifile
+    def __init__(self, constraintsPath: Path, descriptorPath: Path,):
+        self.constraintsPath: Path = constraintsPath
+        self.descriptorPath:  Path = descriptorPath
     # ----------------------------------------------------------------------- #
 
     def runcmd(self, *args: str) -> CmdResult:
         proc_args = [
-            f'{Clang.exe["clang"]}',
-            '-g',
-            '-ggdb',
-            '-Xclang',
-            '-disable-O0-optnone',
-            f'-{self.optFlag}',
-            '-std=c2x',
-            '-Wall',
-            '-fno-stack-protector',
-            '-no-pie',
-            '-o', f'{self.ofile}',
-            f'{self.ifile}',
+            f'{Jotai.exe["jotai"]}',
+            f'{self.constraintsPath}',
+            f'{self.descriptorPath}',
         ] + [*args]
-        return runproc(proc_args, Clang.timeout)
+        return runproc(proc_args, Jotai.timeout)
 
 
 

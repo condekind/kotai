@@ -1,91 +1,93 @@
 #!/usr/bin/env python3
 # =========================================================================== #
 
-import subprocess as sp
-from subprocess import PIPE
-from dataclasses import dataclass
 from pathlib import Path
 
-from kotai.types import ExitCode, CmdResult, cmdresult, Timeout
+from kotai.types import ExitCode, CmdResult, runproc
 
 # --------------------------------------------------------------------------- #
 
-@dataclass
 class CFGgrind:
 
-    cFile: Path
-    benchFn: str
-    # binPath:        Path  # {bench}_{optFlag}
-    # mapFilePath:    Path  # {bench}_{optFlag}.map
-    # cfgOutFilePath: Path  # {bench}_{optFlag}_case-{idx}.cfg
-    optFlag: str    = 'O0'
-    valgrind        = Path('valgrind')
-    cfggrind_asmmap = Path('cfggrind_asmmap')
-    cfggrind_info   = Path('cfggrind_info')
+    # ---------------------------- Static attrs. ---------------------------- #
 
+    exe: dict[str, Path] = {
+        'valgrind':        Path('valgrind'),
+        'cfggrind_asmmap': Path('cfggrind_asmmap'),
+        'cfggrind_info':   Path('cfggrind_info'),
+    }
 
-    def __post_init__(self, ):
+    timeout: float = 3.0
 
-        ''' benchName '''
-        self.bench = self.cFile.stem
+    # ---------------------------- Member attrs. ---------------------------- #
 
-        ''' path/to/benchName.d '''
-        self.cFileMetaDir = self.cFile.with_suffix('.d')
+    __slots__ = (
+        'binPath',
+        'benchFn',
+        'mapFilePath',
+        'cfgOutFilePath',
+        'cfggInfoOutPath',
+    )
 
-        ''' path/to/benchName.d/benchName_optFlag '''
-        self.binPath = self.cFileMetaDir / (self.bench + f'_{self.optFlag}')
+    # ----------------------------------------------------------------------- #
+    def __init__(self, binPath: Path, benchFn: str):
+        self.binPath = binPath
+        self.benchFn = benchFn
 
         ''' path/to/benchName.d/benchName_optFlag.map '''
-        self.mapFilePath = Path(str(self.binPath) + '.map')
+        self.mapFilePath: Path = Path(str(self.binPath) + '.map')
 
         ''' path/to/benchName.d/benchName_optFlag.cfg '''
-        self.cfgOutFilePath = Path(str(self.binPath) + '.cfg')
+        self.cfgOutFilePath: Path = Path(str(self.binPath) + '.cfg')
 
-    def _run_cfggrind_asmmap(self,) -> CmdResult:
-        proc_args = Timeout['cfggrind_asmmap'] + [
-            'cfggrind_asmmap',
+        ''' path/to/benchName.d/benchName_optFlag.map '''
+        self.cfggInfoOutPath: Path = Path(str(self.binPath) + '.info')
+    # ----------------------------------------------------------------------- #
+
+    def _run_cfggrind_asmmap(self, timeout: float, *args: str) -> CmdResult:
+        proc_args = [
+            f'{CFGgrind.exe["cfggrind_asmmap"]}',
             f'{self.binPath}',
-        ]
-        res, err = cmdresult(self, sp.run(proc_args, stdout=PIPE, stderr=PIPE))
-        if err == ExitCode.OK:
-            with open(self.mapFilePath, 'w') as mapFileHandle:
-                mapFileHandle.write(res)
-            return (res, err)
-        return ('', err)
+        ] + [*args]
+        #print(f'cfgg_asmmap: {proc_args}')
+        return runproc(proc_args, timeout, ofpath=self.mapFilePath)
 
-    def _run_valgrind_with_cfggrind(self, *args: str) -> CmdResult:
-        proc_args = Timeout['valgrind_with_cfggrind'] + [
-            f'{self.valgrind}',
+
+    def _run_valgrind(self, timeout: float, *args: str) -> CmdResult:
+        proc_args = [
+            f'{CFGgrind.exe["valgrind"]}',
             '--tool=cfggrind',
             f'--cfg-outfile={self.cfgOutFilePath}',
             f'--instrs-map={self.mapFilePath}',
             f'./{self.binPath}',
-        ] + [*args]  # 'idx'
-        return cmdresult(self, sp.run(proc_args, stdout=PIPE, stderr=PIPE))
+        ] + [*args]  # e.g., switch-case 'idx'
+        #print(f'valgrind: {proc_args}')
+        return runproc(proc_args, timeout)
 
 
-    def _run_cfggrind_info(self,) -> CmdResult:
-        proc_args = Timeout['cfggrind_info'] + [
-            'cfggrind_info',
+    def _run_cfggrind_info(self, timeout: float, *args: str) -> CmdResult:
+        proc_args = [
+            f'{CFGgrind.exe["cfggrind_info"]}',
             '-f', f'{self.binPath.name}::{self.benchFn}',
             '-s', 'functions',
             '-m', 'json',
             f'{self.cfgOutFilePath}'
-        ]
-        return cmdresult(self, sp.run(proc_args, stdout=PIPE, stderr=PIPE))
+        ] + [*args]
+        #print(f'cfgg_info: {proc_args}')
+        return runproc(proc_args, timeout, ofpath=self.cfggInfoOutPath)
 
 
-    def runcmd(self) -> CmdResult:
-        cfggMapRes , err = self._run_cfggrind_asmmap()
-        if err != ExitCode.OK:
-            return (cfggMapRes, err)
+    def runcmd(self, *args: str) -> CmdResult:
+        cfggMapRes = self._run_cfggrind_asmmap(CFGgrind.timeout, *args)
+        if cfggMapRes.err != ExitCode.OK:
+            return cfggMapRes
 
-        valgrindRes, err = self._run_valgrind_with_cfggrind()
-        if err != ExitCode.OK:
-            return (valgrindRes, err)
+        valgrindRes = self._run_valgrind(CFGgrind.timeout, *args)
+        if valgrindRes.err != ExitCode.OK:
+            return valgrindRes
 
-        cfggInfoRes, err = self._run_cfggrind_info()
-        if err != ExitCode.OK:
-            return (cfggInfoRes, err)
+        return self._run_cfggrind_info(CFGgrind.timeout, *args)
 
-        return ('Success', ExitCode.OK)
+
+
+# =========================================================================== #

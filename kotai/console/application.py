@@ -4,43 +4,33 @@
 import argparse
 import logging
 from pathlib import Path
-from string import ascii_letters
-from kotai.constraints.genkonstrain import Konstrain, KonstrainExecType, KonstrainExecTypes
-from kotai.plugin.CFGgrind import CFGgrind
-from kotai.plugin.Clang import Clang
-from kotai.plugin.PrintDescriptors import ClangPluginPrintDescriptors
-from kotai.templates.benchmark import GenBenchTemplatePrefix
-from kotai.Jotai import Jotai
 from multiprocessing import Pool
 
-from kotai.types import ExitCode, SysExitCode
+from kotai.constraints.genkonstrain import Konstrain, KonstrainExecType, KonstrainExecTypes
+from kotai.plugin.PrintDescriptors import PrintDescriptors
+from kotai.plugin.Jotai import Jotai
+from kotai.plugin.Clang import Clang
+from kotai.plugin.CFGgrind import CFGgrind
+from kotai.templates.benchmark import GenBenchTemplatePrefix
+from kotai.types import ExitCode, FileWithFnName, SysExitCode, OptFlag, logret
 from kotai.logconf import logFmt, sep
 
 # --------------------------------------------------------------------------- #
 '''
 TODOs:
-    - Wrap CFGgrind internal calls with kotai.types.cmdresult()
+    - Add checks to avoid re-running intermediate steps (check if files exist)
+
+    - Modify Jotai.cpp to generate the new switch-based main from the prototype
+
+    - Find a way to prepend the orig. function with __attribute__((noinline))
 
     - Find out which CFGgrind call creates "vgcore.XXXXXX" (temp) files and
       remove these files when they're no longer needed (or create them
       somewhere else)
 
-    - Add checks to avoid re-running intermediate steps (check if files exist)
-
-    - Find a way to prepend the orig. function with __attribute__((noinline))
-
-    - Change CmdResult to a NamedTuple
-
-    - Refactor _cmdresult() in constraints/genkonstrain.py
-
     - Change wrappers so they don't need to be instantiated inside the worker
       functions. Maybe remove individual file attributes and make their methods
       static, receiving these attrs as args?
-
-    - Fix wrappers so the only remaining attributes with default values are not
-      initialized with these
-
-    - Modify Jotai.cpp to generate the new switch-based main from the prototype
 '''
 # --------------------------------------------------------------------------- #
 
@@ -66,7 +56,7 @@ class Application:
         #cli.add_argument('-B', '--buildpath', default='./build')
         cli.add_argument('-c', '--clean', action='store_true', default=False)
         cli.add_argument('-i', '--inputdir', nargs='+', required=True)
-        cli.add_argument('-j', '--nproc', type=int, default=12)
+        cli.add_argument('-j', '--nproc', type=int, default=6)
         cli.add_argument('-J', '--chunksize', type=int, default=-1)
         cli.add_argument('-K', choices=validkets, default='all')
         cli.add_argument('-L', '--logfile',   default='./output/jotai.log')
@@ -95,7 +85,7 @@ class Application:
             filename=self.args.logfile,
             filemode='w+',
             format=logFmt,
-            level=logging.DEBUG
+            level=logging.INFO
         )
         logging.debug(f'{self.args=}')
 
@@ -113,15 +103,11 @@ def _cleanFn(cFile: Path) -> ExitCode:
     for file in genFiles:
         try: file.unlink(missing_ok=True)
         except Exception as e:
-            logging.error(f'{e}: failed to delete {file=}')
+            logging.error(f'{e}: {file=}')
             continue
     try: cFileMetaDir.rmdir()
-    except Exception as e:
-        logging.error(f'{e}: failed to delete {cFileMetaDir=}')
-        return ExitCode.ERR
-    else:
-        logging.debug(f'Deleted {cFileMetaDir=}')
-        return ExitCode.OK
+    except Exception as e: return logret(f'{e}: {cFileMetaDir=}').err
+    return logret(f'Deleted {cFileMetaDir=}', level='info').err
 
 
 # Called by _genDescriptor to save the fn name found in the benchmark.
@@ -141,11 +127,9 @@ def _getFnName(desc: str) -> ExitCode | str:
 
 
 # Worker function mapped in a multiprocessing.Pool to run PrintDescriptors
-def _genDescriptor(cFile: Path) -> ExitCode | str:
-    cFileMetaDir   = cFile.with_suffix('.d')
-    descriptorPath = cFileMetaDir / 'descriptor'
+def _genDescriptor(cFile: Path) -> ExitCode | FileWithFnName:
 
-    printDescriptorsPlugin = ClangPluginPrintDescriptors(cFile)
+    printDescriptorsPlugin = PrintDescriptors(cFile)
     msg, err = printDescriptorsPlugin.runcmd()
 
     # If error: returns before creating the descriptor file
@@ -159,12 +143,14 @@ def _genDescriptor(cFile: Path) -> ExitCode | str:
         return ExitCode.ERR
 
     # Creates the output dir for the current cFile
+    cFileMetaDir = cFile.with_suffix('.d')
     try: cFileMetaDir.mkdir(parents=True, exist_ok=True)
     except PermissionError as pe:
         logging.error(f'{pe}: could not create dir {cFileMetaDir=}')
         return ExitCode.ERR
 
     # Creates the descriptor
+    descriptorPath = cFileMetaDir / 'descriptor'
     try: descFile = open(descriptorPath, 'w')
     except PermissionError as pe:
         logging.error(f'{pe}: could not create file {descriptorPath=}')
@@ -177,131 +163,73 @@ def _genDescriptor(cFile: Path) -> ExitCode | str:
                 return ExitCode.ERR
 
     logging.info(f'{descriptorPath=} written:\n{msg}\n{sep}')
-    return fnName
+    assert(isinstance(fnName, str))
+    return FileWithFnName(cFile, fnName)
 
 
 # Worker function mapped in a multiprocessing.Pool to run Konstrain
-def _runKonstrain(cFile:Path, ket: KonstrainExecType) -> ExitCode:
-    cFileMetaDir   = cFile.with_suffix('.d')
-    descriptorPath = cFileMetaDir / 'descriptor'
-
-    konstrain = Konstrain(cFile, descriptorPath, ket)
-    logging.info(f'{konstrain.__dict__=}')
-    print(f'Running konstrain: {(cFile, descriptorPath, ket)=}')
-    constraints, err = konstrain.runcmd()
-
-    if err == ExitCode.ERR:
-        logging.info(f'Konstrain error: "{constraints=}"')
-        return ExitCode.ERR
-
-    constraintsPath = cFileMetaDir / f'constraint_{ket}'
-    try: konsFile = open(constraintsPath, 'w')
-    except PermissionError as pe:
-        logging.error(f'{pe}: could not create file {constraintsPath=}')
-        return ExitCode.ERR
-    else:
-        with konsFile:
-            for line in constraints:
-                print(line, file=konsFile)
-            logging.info(f'{constraintsPath=} written:\n{constraints}\n{sep}')
-            return ExitCode.OK
-
-
-### TODO: WARNING: GAMBIARRA AHEAD
-def _runJotai(cFile: Path) -> ExitCode:
-
+def _runKonstrain(cFile:Path, ket: KonstrainExecType) -> ExitCode | Path:
     cFileMetaDir    = cFile.with_suffix('.d')
     descriptorPath  = cFileMetaDir / 'descriptor'
-    constraintsPath = cFileMetaDir / f'constraint_big-arr'  # big-arr only
+    constraintsPath = cFileMetaDir / f'constraint_{ket}'
 
-    genBenchPath = cFileMetaDir / cFile.name  # big-arr only
-    jotai = Jotai(constraintsPath, descriptorPath)
+    konstrain = Konstrain(descriptorPath, ket, constraintsPath)
 
+    logging.info(f'Running konstrain on {cFile}')
+    return cFile if konstrain.runcmd().err != ExitCode.ERR else ExitCode.ERR
+
+
+def _runJotai(cFile: Path) -> ExitCode | Path:
     # genBenchFile buffer, starting with headers
     # buffer <- includes, defines, typedefs and runtime info placeholder
     genBuffer = GenBenchTemplatePrefix
 
     # buffer += original benchmark function
     try: cFile_RO = open(cFile, 'r', encoding='utf-8')
-    except Exception as e:
-        logging.error(f'{cFile=}: {e}')
-        return ExitCode.ERR
-    else:
-        with cFile_RO:
-            genBuffer += cFile_RO.read() + f'\n\n\n{sep}\n\n'
+    except Exception as e: return logret(e).err
+    with cFile_RO: genBuffer += cFile_RO.read() + f'\n\n\n{sep}\n\n'
 
-    mainFn, err = jotai.runcmd()
+    cFileMetaDir    = cFile.with_suffix('.d')
+    descriptorPath  = cFileMetaDir / 'descriptor'
+    constraintsPath = cFileMetaDir / f'constraint_big-arr'  # big-arr only
+    jotai           = Jotai(constraintsPath, descriptorPath)
+    logging.info(f'Running jotai with {constraintsPath=}, {descriptorPath=}')
+    mainFn, err     = jotai.runcmd()
 
     # If error: returns before creating the descriptor file
-    if err == ExitCode.ERR:
-        logging.error(f'Jotai error: {mainFn=}')
-        return ExitCode.ERR
-    else:
-        genBuffer += mainFn
+    if err == ExitCode.ERR: return logret(f'Jotai error: {mainFn=}').err
+    else: genBuffer += mainFn
 
-    # Creates the genBench
+    # Creates the genBench file and writes the buffer to it
+    genBenchPath = cFileMetaDir / cFile.name  # big-arr only
     try: genBenchFile = open(genBenchPath, 'w')
-    except PermissionError as pe:
-        logging.error(f'{pe}: could not create file {genBenchPath=}')
-        return ExitCode.ERR
-    else:
-        with genBenchFile:
-            try: print(genBuffer, file=genBenchFile)
-            except Exception as e:
-                logging.error(f'{e}: could not write to {genBenchFile=}')
-                return ExitCode.ERR
-    logging.info(f'{genBenchPath=} written:\n{mainFn}\n{sep}')
-    return ExitCode.OK
+    except Exception as e: return logret(e).err
+    with genBenchFile:
+        try: print(genBuffer, file=genBenchFile)
+        except Exception as e: return logret(e).err
 
-# ---------------------------------- GAMBS ---------------------------------- #
+    return cFile
 
 
-### TODO: WARNING: GAMBIARRA AHEAD
-def _compileGenBench(cFile: Path) -> ExitCode:
+def _compileGenBench(cFile: Path) -> ExitCode | Path:
     cFileMetaDir = cFile.with_suffix('.d')
     optFlag      = 'O0'
     genBenchPath = cFileMetaDir / cFile.name
     genBinPath   = cFileMetaDir / f'{cFile.stem}_{optFlag}'
 
     # Compiles the genBench into a binary
-    clang = Clang(ifile=genBenchPath, ofile=genBinPath)
-    msg, err = clang.runcmd()
-
-    if err == ExitCode.ERR:
-        logging.error(f'Clang error: {msg=}')
-        return ExitCode.ERR
-
-    ## TODO: Go to Clang.py, add a proc.stderr.decode check to print warnings
-    #logging.warning(f'{genBinPath=} stderr:\n{err}\n{sep}')
-    logging.info(f'{genBinPath=} written:\n{msg}\n{sep}')
-    return ExitCode.OK
+    clang = Clang(optFlag=optFlag, ofile=genBinPath, ifile=genBenchPath)
+    return cFile if clang.runcmd().err != ExitCode.ERR else ExitCode.ERR
 
 
-# ---------------------------------- GAMBS ---------------------------------- #
-
-
-### TODO: WARNING: GAMBIARRA AHEAD
 def _runCFGgrind(cFile: Path, fnName: str) -> ExitCode:
-    cFileMetaDir = cFile.with_suffix('.d')
-    optFlag      = 'O0'
-    genBenchPath = cFileMetaDir / cFile.name
-    genBinPath   = cFileMetaDir / f'{cFile.stem}_{optFlag}'
+    cFileMetaDir     = cFile.with_suffix('.d')
+    optFlag: OptFlag = 'O0'
+    genBinPath       = cFileMetaDir / f'{cFile.stem}_{optFlag}'
 
     # Compiles the genBench into a binary
-    cfgg = CFGgrind(cFile, fnName)
-    msg, err = cfgg.runcmd()
-
-    if err == ExitCode.ERR:
-        logging.error(f'Clang error: {msg=}')
-        return ExitCode.ERR
-
-    ## TODO: Go to Clang.py, add a proc.stderr.decode check to print warnings
-    #logging.warning(f'{genBinPath=} stderr:\n{err}\n{sep}')
-    logging.info(f'{genBinPath=} written:\n{msg}\n{sep}')
-    return ExitCode.OK
-
-
-# ---------------------------------- GAMBS ---------------------------------- #
+    cfgg = CFGgrind(genBinPath, fnName)
+    return cfgg.runcmd().err
 
 
 def _start(self: Application, ) -> SysExitCode:
@@ -309,7 +237,17 @@ def _start(self: Application, ) -> SysExitCode:
     # For each directory passed with -i/--inputdir, do:
     for benchDir in self.inputBenchmarks:
 
-        # Get all .c files in that directory
+        ## TODO: Finish this optimization
+        ## Get all .c files in that directory and exclude the ones that were
+        ## already used to generate a descriptor in a previous run
+        #dFiles  = list(benchDir.glob('*.d/descriptor'))
+        #cFiles  =  [cf for cf
+        #            in benchDir.glob('*.c')
+        #            if cf.with_suffix('.d') / Path('descriptor') not in dFiles]
+        #kcfiles =  {kf.parent.with_suffix('.c') for kf
+        #            in benchDir.glob('*.d/constraint*')}
+        #cFiles  =  [cf for cf in cFiles if cf not in kcfiles]
+
         cFiles = list(benchDir.glob('*.c'))
 
         if self.args.clean:
@@ -319,34 +257,36 @@ def _start(self: Application, ) -> SysExitCode:
                 pool.join()
             return ExitCode.OK
 
-        konsArgs = [(cf, ty) for cf in cFiles for ty in self.ketList]
-
         with Pool(self.nproc) as pool:
 
             # benchDir/descriptor <- PrintDescriptors
-            fnNames = {cf: fn for (cf, fn) in
-                zip(cFiles, pool.map(_genDescriptor, cFiles, self.chunksize))
-                if fn != ExitCode.ERR
-            }
-            if not fnNames:
-                return '_genDescriptor failed for every input'
+            res = pool.map(_genDescriptor, cFiles, self.chunksize)
+
+            cf_fn = [r for r in res if isinstance(r, FileWithFnName)
+                                    and r.cf in cFiles]
+            if not cf_fn:
+                return 'No input for Konstrain'
 
             # benchDir/constraints <- Konstrain
-            res = pool.starmap(_runKonstrain, konsArgs, self.chunksize)
-            if all(ret == ExitCode.ERR for ret in res):
-                return '_runKonstrain failed for every input'
+            konsInput = [(r.cf, ty) for r in cf_fn for ty in self.ketList]
+            resKons = pool.starmap(_runKonstrain, konsInput, self.chunksize)
+            if all(ret == ExitCode.ERR for ret in resKons):
+                return 'No input for Jotai'
 
             # benchDir/genBench.c <- Jotai
-            res = pool.map(_runJotai, cFiles, self.chunksize)
-            if all(ret == ExitCode.ERR for ret in res):
-                return '_runJotai failed for every input'
+            jotaiInput = [cf for cf in resKons if isinstance(cf, Path)]
+            resJotai = pool.map(_runJotai, jotaiInput, self.chunksize)
+            if all(ret == ExitCode.ERR for ret in resJotai):
+                return 'No input for clang'
 
             # benchDir/genBench <- clang
-            res = pool.map(_compileGenBench, cFiles, self.chunksize)
-            if all(ret == ExitCode.ERR for ret in res):
-                return '_compileGenBench failed for every input'
+            clangInput = [cf for cf in resJotai if isinstance(cf, Path)]
+            resClang = pool.map(_compileGenBench, clangInput, self.chunksize)
+            if all(ret == ExitCode.ERR for ret in resClang):
+                return 'No input for CFGgrind'
 
-            res = pool.starmap(_runCFGgrind, fnNames.items(), self.chunksize)
+            cfgGrindInput = {cf: fn for (cf,fn) in cf_fn if cf in resClang}
+            pool.starmap(_runCFGgrind, cfgGrindInput.items(), self.chunksize)
 
             pool.close()
             pool.join()

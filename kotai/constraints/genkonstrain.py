@@ -1,13 +1,12 @@
 #!/usr/bin/env python3
+# =========================================================================== #
 
-import subprocess as sp
-from subprocess import PIPE, CompletedProcess
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
-import logging
 
-from kotai.types import ExitCode, Timeout
+from kotai.types import runproc, CmdResult
+
+# --------------------------------------------------------------------------- #
 
 KonstrainExecType = Literal[
     'all',
@@ -20,59 +19,42 @@ KonstrainExecTypes: list[KonstrainExecType] = [
     'big-arr',
     'big-arr-10x'
 ]
-KonstrainResult = tuple[list[str], ExitCode]
 
-@dataclass
+# --------------------------------------------------------------------------- #
+
 class Konstrain:
 
-    ifile:      Path
-    descriptor: Path
-    execType:   KonstrainExecType = 'all'
-    timeout     = 30
-    jarPath = Path(('kotai/constraints/konstrain/target/'
-        'konstrain-1.0-SNAPSHOT-jar-with-dependencies.jar')).resolve()
+    # ---------------------------- Static attrs. ---------------------------- #
+    exe: dict[str, Path] = {
+        'konstrain': Path('kotai/constraints/konstrain/target/'
+                          'konstrain-1.0-SNAPSHOT-jar-with-dependencies.jar')
+                          .resolve(),
+    }
 
-    def cmd(self) -> list[str]:
-        return Timeout['Konstrain'] + [
-            'timeout',      f'{self.timeout}',
-            'java', '-jar', f'{self.jarPath}',
+    timeout: float = 3.0
+
+    # ---------------------------- Member attrs. ---------------------------- #
+
+    __slots__ = (
+        'descriptor',
+        'ket',
+        'ofile',
+    )
+
+    def __init__(self, descriptor: Path, ket: KonstrainExecType, ofile: Path,):
+        self.descriptor: Path       = descriptor
+        self.ket: KonstrainExecType = ket
+        self.ofile: Path            = ofile
+
+    def runcmd(self, *args: str) -> CmdResult:
+        proc_args = [
+            'java', '-jar', f'{Konstrain.exe["konstrain"]}',
             str(self.descriptor),
-            str(self.execType),
-        ]
-
-
-    def _run(self) -> sp.CompletedProcess[bytes]:
-        return sp.run(self.cmd(), stdout=PIPE, stderr=PIPE)
-
-
-    def runcmd(self) -> KonstrainResult:
-        proc = self._run()
-        return _cmdresult(proc)
+            str(self.ket),
+        ] + [*args]
+        return runproc(proc_args, Konstrain.timeout,
+                       ofpath=self.ofile, breakLines=True)
 
 
 
-def _cmdresult(proc: CompletedProcess[bytes]) -> KonstrainResult:
-    match proc.returncode:
-        case 0:
-            try:
-                constraints = proc.stdout.decode('utf-8')
-            except UnicodeDecodeError:
-                logging.error('UnicodeDecodeError')
-                return (['UnicodeDecodeError'], ExitCode.ERR)
-            else:
-                _result = list(map(
-                    lambda c:
-                        c.rstrip(" ,\n"),filter(
-                            lambda c:
-                                c, constraints.split("\n"))))
-
-                return (_result, ExitCode.OK)
-        case _:
-            try:
-                procErrMsg = proc.stderr.decode('utf-8')
-            except UnicodeDecodeError:
-                logging.error('UnicodeDecodeError')
-                return (['UnicodeDecodeError'], ExitCode.ERR)
-            else:
-                logging.error(f'Konstrain error: {procErrMsg=}')
-                return (procErrMsg.split(), ExitCode.ERR)
+# =========================================================================== #
