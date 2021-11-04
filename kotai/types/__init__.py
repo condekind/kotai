@@ -1,75 +1,56 @@
+#!/usr/bin/env python3
+# =========================================================================== #
+
 from typing import Callable, NamedTuple, Literal, Any
 from enum import Enum
 from pathlib import Path
 import subprocess as sp
-from subprocess import CompletedProcess, PIPE
 import logging
+
+
+# (cf: Path, fn: str)
+BenchInfo = dict[Any, Any]
+FileWithFnName = tuple[Any, Any]
+
 
 class ExitCode(Enum):
     OK  = 0,
     ERR = 1,  # Generic error
-
 SysExitCode = ExitCode | str
 
-LogLevel = Literal[
-    'info',
-    'warning',
-    'error',
-    'critical',
-    'debug',
-]
+
+LogLevel = Literal['info', 'warning', 'error', 'critical', 'debug']
 Log: dict[LogLevel, Callable[..., None]] = {
-    'info' : logging.info,
-    'warning' : logging.warning,
-    'error' : logging.error,
+    'info'     : logging.info,
+    'warning'  : logging.warning,
+    'error'    : logging.error,
     'critical' : logging.critical,
-    'debug' : logging.debug,
+    'debug'    : logging.debug,
 }
 
-OptFlag = Literal[
-    'O0',
-    'O1',
-    'O2',
-    'O3',
-    'Ofast',
-    'Oz',
-    'Os',
-]
 
 # Arguments received by the worker function (compiling+running+stats)
 class ProcArgs(NamedTuple):
     cFile: Path          # Name of the file to be compiled
     clean: bool = False # Whether existing files are to be cleaned or not
 
+
+# CmdResult just models (result,errcode) as (str,int)
 class CmdResult(NamedTuple):
     msg: str
     err: ExitCode = ExitCode.ERR
 
-ErrResult = CmdResult('', ExitCode.ERR)
 
-class FileWithFnName(NamedTuple):
-    cf: Path
-    fn: str
-
-def logret(msg: Any, ret: CmdResult = ErrResult, level: LogLevel = 'error'):
+# When returning, if logging is desired, this allows `return logret(msg, ret)`
+def logret(msg: Any, ret: CmdResult = CmdResult('', ExitCode.ERR),
+           level: LogLevel = 'error'):
     ''' Calls logging.<level> with msg and propagates ret'''
     Log[level](f'{msg}')
     return ret
 
-def outret(ret: CmdResult, ofpath: Path | None, ofmode: str,
-           breakLines: bool) -> CmdResult:
-    '''If ofpath != None, write ret.msg to it, otherwise just propagate ret'''
-    if ofpath:
-        try: fout = open(ofpath, ofmode)
-        except Exception as e: return logret(e)
-        with fout:
-            if breakLines: fout.writelines([c + '\n' for l
-                                 in ret.msg.replace('\r','').split('\n')
-                                 if (c := l.strip())])
-            else: print(ret.msg, file=fout)
-    return ret
 
-def res2utf8(proc: CompletedProcess[bytes], errIsOut: bool) -> CmdResult:
+#def res2utf8(proc: CompletedProcess[bytes], errIsOut: bool) -> CmdResult:
+def res2utf8(out: bytes, err: bytes, errIsOut: bool) -> CmdResult:
     '''
     subprocess.run() Result To UTF-8 (plus ExitCode)
 
@@ -78,22 +59,33 @@ def res2utf8(proc: CompletedProcess[bytes], errIsOut: bool) -> CmdResult:
     converted into error-values (str, ExitCode). The value of proc.returncode
     dictates whether stdout or stderr are used.
     '''
-    outStream = proc.stderr if errIsOut else proc.stdout
+    outStream = err if errIsOut else out
 
-    if proc.returncode == 0:
-        try: pout = outStream.decode('utf-8')
-        except Exception as e: return logret(e)
-        else: return CmdResult(pout, ExitCode.OK)
+    try: pout = outStream.decode('utf-8')
+    except Exception as e: return logret(e)
+    else: return CmdResult(pout, ExitCode.OK)
+
+def out2file(ret: CmdResult, ofpath: Path, breakLines: bool) -> CmdResult:
+    try:
+        with open(ofpath, 'w+') as fout:
+
+            if breakLines:
+                txt = [ line+'\n' for l
+                        in ret.msg.replace('\r','').split('\n')
+                        if (line := l.strip()) ]
+                fout.writelines(txt)
+
+            else:
+                fout.write(ret.msg)
+
+    # Common exceptions(s): OSError, ValueError, IOError
+    except Exception as e:
+        return logret(e)
     else:
-        try: perr = proc.stderr.decode('utf-8')
-        except Exception as e: return logret(e)
-        else: return logret(f'{perr=}', ret=CmdResult(perr, ExitCode.ERR))
-
-
+        return ret
 
 def runproc(proc_args: list[str], timeout: float,
-           ofpath: Path | None = None, ofmode: str = 'w',
-           breakLines: bool = False, errIsOut: bool = False):
+            ofpath: Path | None = None, breakLines: bool = False) -> CmdResult:
     '''
     Wrapper to subprocces.run that tries to: run, decode, write, return
     Exceptions raised are converted to error-values
@@ -103,66 +95,26 @@ def runproc(proc_args: list[str], timeout: float,
     - writes it to ofpath when defined, and
     - returns it with the proper ExitCode
     '''
-    try: return outret(res2utf8(sp.run(proc_args, timeout=timeout,
-                                       stdout=PIPE, stderr=PIPE), errIsOut),
-                                ofpath, ofmode, breakLines)
-    except Exception as e: return logret(e)
 
-# # Wrapper to subprocess.run that decodes and handles exceptions
-# def cmdresult(proc: CompletedProcess[bytes]) -> CmdResult:
-#     if proc.returncode == 0:
-#         try: proc_out = proc.stdout.decode('utf-8')
-#         except Exception as e:
-#             logging.error(f'proc_out: {e}')
-#             return (f'{e}', ExitCode.ERR)
-#         else: return (proc_out, ExitCode.OK)
+    try: proc = sp.Popen(proc_args, text=True, close_fds=True,
+                         stdout=sp.PIPE, stderr=sp.PIPE)
 
-#     try: proc_err = proc.stderr.decode('utf-8')
-#     except Exception as e:
-#         logging.error(f'{e}')
-#         return (f'{e}', ExitCode.ERR)
-#     else:
-#         logging.error(f'{proc_err=}')  # decoded stderr from process
-#         return (proc_err, ExitCode.ERR)
+    # Common exceptions(s): OSError, ValueError
+    except Exception as e:
+        return logret(e)
 
-Timeout: dict[str,float] = {
-    'ClangPluginPrintDescriptors' : 3.0,
-    'Konstrain'                   : 3.0,
-    'Jotai'                       : 3.0,
-    'Clang'                       : 3.0,
-    'cfggrind_asmmap'             : 3.0,
-    'valgrind_with_cfggrind'      : 3.0,
-    'cfggrind_info'               : 3.0,
-}
+    # Common exceptions(s): TimeoutExpired
+    try: proc.communicate(timeout=timeout)
+    except Exception as e: logging.error(f'{e}:"{proc.args}"')
 
-CStdHeaderName = Literal[
-    'assert.h',
-    'complex.h',
-    'ctype.h',
-    'errno.h',
-    'fenv.h',
-    'float.h',
-    'inttypes.h',
-    'iso646.h',
-    'limits.h',
-    'locale.h',
-    'math.h',
-    'setjmp.h',
-    'signal.h',
-    'stdalign.h',
-    'stdarg.h',
-    'stdatomic.h',
-    'stdbool.h',
-    'stddef.h',
-    'stdint.h',
-    'stdio.h',
-    'stdlib.h',
-    'stdnoreturn.h',
-    'string.h',
-    'tgmath.h',
-    'threads.h',
-    'time.h',
-    'uchar.h',
-    'wchar.h',
-    'wctype.h',
-]
+    proc.kill()  # After this point, proc.returncode can't be None
+    out, err = proc.communicate()  # Results
+    if out: logging.debug(f'{out=}')
+    if err: logging.error(f'{err=}')
+
+    res = CmdResult(out, ExitCode.ERR if proc.returncode else ExitCode.OK)
+    return out2file(res, ofpath, breakLines) if ofpath else res
+
+
+
+# =========================================================================== #

@@ -4,7 +4,7 @@
 from pathlib import Path
 from typing import Literal
 
-from kotai.types import runproc, CmdResult
+from kotai.types import BenchInfo, runproc, CmdResult
 
 # --------------------------------------------------------------------------- #
 
@@ -19,6 +19,9 @@ KonstrainExecTypes: list[KonstrainExecType] = [
     'big-arr',
     'big-arr-10x'
 ]
+
+class KonsInfo(BenchInfo):
+    ket: KonstrainExecType
 
 # --------------------------------------------------------------------------- #
 

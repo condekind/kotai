@@ -1,6 +1,8 @@
 # =========================================================================== #
 
 import logging, datetime
+
+from kotai.types import ExitCode
 def _fmtTime(self:   logging.Formatter,
              record: logging.LogRecord,
              datefmt: str | None = None):
@@ -14,7 +16,6 @@ logging.Formatter.formatTime = _fmtTime
 if __name__ == "__main__":
     from kotai.console.application import main
     import sys
-
-    sys.exit(main())
+    sys.exit(0 if main() == ExitCode.OK else 1)
 
 # =========================================================================== #
