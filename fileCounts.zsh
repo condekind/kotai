@@ -32,6 +32,12 @@ progName=$0
         print -lr '' 'Number of .info files with stats produced by cfggrind_info:'
         find $benchsdir -wholename "*.d/*.info" | wc -l
 
+        print -lr '' 'complete: true'
+        grep -rl "complete: true" $benchsdir | wc -l
+
+        print -lr '' 'complete: false'
+        grep -rl "complete: false" $benchsdir | wc -l
+
     }
 
     # ---
