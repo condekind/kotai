@@ -8,7 +8,7 @@ A rewrite of [@jcoelho96](https://github.com/jcoelho96)'s [Jotai](http://cuda.dc
 ### Required:
 * Python 3.10[\*](#WhyModernPython) (if your OS/distro doesn't use it by default, check pyenv below)
 * Valgrind 3.17 compiled with [CFGgrind](https://github.com/rimsa/CFGgrind#building)
-* A working build of [Jotai](http://cuda.dcc.ufmg.br:8080/jcoelho/jotai#building-the-project)
+* A working build of [Jotai](http://cuda.dcc.ufmg.br:8080/jcoelho/jotai#building-the-project), with a working [Konstrain](http://cuda.dcc.ufmg.br:8080/jcoelho/jotai/tree/master#usage-1) .jar
 
 ### Recommended:
 * [pyenv](https://github.com/pyenv/pyenv#installation)
@@ -91,6 +91,10 @@ should output something like this:
 Create a link to the directory in which you built Jotai at the root of the repo. For this early version it's important that the link is called _build_, but the code for accepting other names is already [baked in](#ChangeJotaiPath).
 <pre>
 ln -sfiT <strong>...path/to</strong>/jotai/build build && realpath -eL build/lib/Jotai
+</pre>
+Create a link in kotai/constraints/konstrain to the konstrain directory, located in Jotai's repo.
+<pre>
+ln -sfiT <strong>...path/to</strong>/jotai/konstrain kotai/constraints/konstrain && realpath -eL kotai/constraints/konstrain/target/konstrain-1.0-SNAPSHOT-jar-with-dependencies.jar
 </pre>
 \[Optional\] Create another link to the examples in Jotai's repo
 <pre>
