@@ -53,6 +53,17 @@ class CFGgrind:
         return runproc(proc_args, timeout, ofpath=self.mapFilePath)
 
 
+    def _run_valgrind_memcheck(self, timeout: float, *args: str) -> CmdResult:
+        proc_args = [
+            f'{CFGgrind.exe["valgrind"]}',
+            '--tool=memcheck',
+            '--error-exitcode=1',
+            f'./{self.binPath}',
+        ] + [*args]  # e.g., switch-case 'idx'
+        #print(f'valgrind: {proc_args}')
+        return runproc(proc_args, timeout)
+
+
     def _run_valgrind(self, timeout: float, *args: str) -> CmdResult:
         proc_args = [
             f'{CFGgrind.exe["valgrind"]}',
@@ -81,6 +92,10 @@ class CFGgrind:
         cfggMapRes = self._run_cfggrind_asmmap(CFGgrind.timeout, *args)
         if cfggMapRes.err != ExitCode.OK:
             return cfggMapRes
+
+        valgrindMemcheckRes = self._run_valgrind_memcheck(CFGgrind.timeout, *args)
+        if valgrindMemcheckRes.err != ExitCode.OK:
+            return valgrindMemcheckRes
 
         valgrindRes = self._run_valgrind(CFGgrind.timeout, *args)
         if valgrindRes.err != ExitCode.OK:

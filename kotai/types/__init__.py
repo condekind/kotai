@@ -67,12 +67,12 @@ def res2utf8(out: bytes, err: bytes, errIsOut: bool) -> CmdResult:
 
 def out2file(ret: CmdResult, ofpath: Path, breakLines: bool) -> CmdResult:
     try:
-        with open(ofpath, 'w+') as fout:
+        with open(ofpath, 'w+', encoding='utf-8') as fout:
 
             if breakLines:
                 txt = [ line+'\n' for l
                         in ret.msg.replace('\r','').split('\n')
-                        if (line := l.strip()) ]
+                        if (line := l.strip(' ,')) ]
                 fout.writelines(txt)
 
             else:
@@ -97,7 +97,7 @@ def runproc(proc_args: list[str], timeout: float,
     '''
 
     try: proc = sp.Popen(proc_args, text=True, close_fds=True,
-                         stdout=sp.PIPE, stderr=sp.PIPE)
+                         stdout=sp.PIPE, stderr=sp.PIPE, encoding='utf-8')
 
     # Common exceptions(s): OSError, ValueError
     except Exception as e:

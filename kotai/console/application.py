@@ -5,6 +5,7 @@ import argparse
 import logging
 from pathlib import Path
 from multiprocessing import Pool
+from typing import Counter
 
 from kotai.constraints.genkonstrain import Konstrain, KonstrainExecType, KonstrainExecTypes
 from kotai.plugin.PrintDescriptors import PrintDescriptors
@@ -48,6 +49,7 @@ class Application:
         self.chunksize: int
         self.buildpath: str
         self.logfile: str
+        self.ubstats: str
         self.ketList: list[KonstrainExecType]
         validkets = KonstrainExecTypes + ['all']
 
@@ -62,7 +64,8 @@ class Application:
         cli.add_argument('-j', '--nproc', type=int, default=8)
         cli.add_argument('-J', '--chunksize', type=int, default=-1)
         cli.add_argument('-K', choices=validkets, default='all')
-        cli.add_argument('-L', '--logfile',   default='./output/jotai.log')
+        cli.add_argument('-L', '--logfile', default='./output/jotai.log')
+        cli.add_argument('-u', '--ubstats', default='./output/ubstats.txt')
         cli.parse_args(namespace=self.args)
 
         # [-i]
@@ -158,7 +161,7 @@ def _genDescriptor(args: BenchInfo) -> ExitCode | FileWithFnName:
 
     # Creates the descriptor
     descriptorPath = cFileMetaDir / 'descriptor'
-    try: descFile = open(descriptorPath, 'w')
+    try: descFile = open(descriptorPath, 'w', encoding='utf-8')
     except PermissionError as pe:
         logging.error(f'{pe}: could not create file {descriptorPath=}')
         return ExitCode.ERR
@@ -197,11 +200,11 @@ def _runJotai(pArgs: BenchInfo) -> ExitCode | Path:
     genBuffer = GenBenchTemplatePrefix
 
     # buffer += original benchmark function
-    try: cFile_RO = open(cFile, 'r', encoding='utf-8')
+    try:
+        with open(cFile, 'r', encoding='utf-8') as cFile_RO:
+            genBuffer += cFile_RO.read()
+            genBuffer += f'\n\n\n{sep}\n\n'
     except Exception as e: return logret(e).err
-    else:
-        with cFile_RO:
-            genBuffer += cFile_RO.read() + f'\n\n\n{sep}\n\n'
 
     cFileMetaDir    = cFile.with_suffix('.d')
     descriptorPath  = cFileMetaDir / 'descriptor'
@@ -217,12 +220,11 @@ def _runJotai(pArgs: BenchInfo) -> ExitCode | Path:
 
     # Creates the genBench file and writes the buffer to it
     genBenchPath = cFileMetaDir / f'{cFile.stem}_{ket}.c'
-    try: genBenchFile = open(genBenchPath, 'w')
-    except Exception as e: return logret(e).err
-    else:
-        with genBenchFile:
-            try: print(genBuffer, file=genBenchFile)
+    try:
+        with open(genBenchPath, 'w', encoding='utf-8') as genBenchFile:
+            try: genBenchFile.write(genBuffer)
             except Exception as e: return logret(e).err
+    except Exception as e: return logret(e).err
 
     return cFile
 
@@ -240,7 +242,7 @@ def _compileGenBench(pArgs: BenchInfo) -> ExitCode | Path:
     return cFile if clang.runcmd().err != ExitCode.ERR else ExitCode.ERR
 
 
-def _runCFGgrind(pArgs: BenchInfo) -> ExitCode:
+def _runCFGgrind(pArgs: BenchInfo) -> BenchInfo:
     cFile: Path            = pArgs['cFile']
     ket: KonstrainExecType = pArgs['ket']
     fnName: str            = pArgs['fnName']
@@ -250,7 +252,7 @@ def _runCFGgrind(pArgs: BenchInfo) -> ExitCode:
 
     # Compiles the genBench into a binary
     cfgg = CFGgrind(genBinPath, fnName)
-    return cfgg.runcmd().err
+    return {'cFile': cFile, 'ExitCode': cfgg.runcmd().err }
 
 
 def _start(self: Application, ) -> SysExitCode:
@@ -278,6 +280,7 @@ def _start(self: Application, ) -> SysExitCode:
                 pool.close()
                 pool.join()
             return ExitCode.OK
+
 
         with Pool(self.nproc, maxtasksperchild=self.mtpc) as pool:
 
@@ -324,9 +327,15 @@ def _start(self: Application, ) -> SysExitCode:
         with Pool(self.nproc, maxtasksperchild=self.mtpc) as pool:
 
             cfgGrindInput = [{'cFile': cf, 'fnName' : fn, 'ket': ty} for (cf,fn) in resGenDesc if cf in resClang for ty in self.ketList]
-            pool.map(_runCFGgrind, cfgGrindInput, self.chunksize)
+            resValgrind = pool.map(_runCFGgrind, cfgGrindInput, self.chunksize)
             pool.close()
             pool.join()
+
+        ubCounter = Counter([e['ExitCode'] for e in resValgrind])
+        try:
+            with open(f'{self.ubstats}', 'w') as ofhandle:
+                ofhandle.writelines(ubCounter)
+        except Exception as e: logging.error(f'{e}')
 
     return ExitCode.OK
 
@@ -335,11 +344,5 @@ def main() -> SysExitCode:
     return Application().start()
 
 
-# --------------------------------------------------------------------------- #
-
-
-if __name__ == '__main__':
-    import sys
-    sys.exit(main() == ExitCode.OK)
 
 # =========================================================================== #

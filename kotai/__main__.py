@@ -3,6 +3,11 @@
 import logging, datetime
 
 from kotai.types import ExitCode
+
+
+# --------------------------------------------------------------------------- #
+
+
 def _fmtTime(self:   logging.Formatter,
              record: logging.LogRecord,
              datefmt: str | None = None):
