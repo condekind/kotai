@@ -6,6 +6,8 @@ from typing import Literal
 
 from kotai.types import CmdResult, runproc
 
+OptFlag = Literal['O0','O1','O2','O3','Os','Oz']
+
 # --------------------------------------------------------------------------- #
 
 class Clang():
@@ -18,7 +20,7 @@ class Clang():
 
     timeout: float = 3.0
 
-    OptFlag = Literal['O0','O1','O2','O3','Ofast','Oz','Os',]
+    OptFlags = ['O0','O1','O2','O3','Ofast','Oz','Os',]
 
     # ---------------------------- Member attrs. ---------------------------- #
 

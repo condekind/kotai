@@ -232,8 +232,8 @@ def _runJotai(pArgs: BenchInfo) -> ExitCode | Path:
 def _compileGenBench(pArgs: BenchInfo) -> ExitCode | Path:
     cFile: Path            = pArgs['cFile']
     ket: KonstrainExecType = pArgs['ket']
+    optFlag                = pArgs['optFlag']
     cFileMetaDir           = cFile.with_suffix('.d')
-    optFlag                = 'O0'
     genBenchPath           = cFileMetaDir / f'{cFile.stem}_{ket}.c'
     genBinPath             = cFileMetaDir / f'{cFile.stem}_{ket}_{optFlag}'
 
@@ -245,9 +245,10 @@ def _compileGenBench(pArgs: BenchInfo) -> ExitCode | Path:
 def _runCFGgrind(pArgs: BenchInfo) -> BenchInfo:
     cFile: Path            = pArgs['cFile']
     ket: KonstrainExecType = pArgs['ket']
+    optFlag                = pArgs['optFlag']
     fnName: str            = pArgs['fnName']
     cFileMetaDir           = cFile.with_suffix('.d')
-    optFlag: Clang.OptFlag = 'O0'
+    optFlag                = 'O0'
     genBinPath             = cFileMetaDir / f'{cFile.stem}_{ket}_{optFlag}'
 
     # Compiles the genBench into a binary
@@ -314,28 +315,35 @@ def _start(self: Application, ) -> SysExitCode:
             if all(ret == ExitCode.ERR for ret in resJotai):
                 return 'No input for clang'
 
-        with Pool(self.nproc, maxtasksperchild=self.mtpc) as pool:
+        resClang: BenchInfo = {}
+        for optFlag in Clang.OptFlags:
+            with Pool(self.nproc, maxtasksperchild=self.mtpc) as pool:
+                # benchDir/genBench <- clang
+                clangInput = [{'cFile': cf, 'ket': ty, 'optFlag': optFlag} for cf in resJotai if isinstance(cf, Path) for ty in self.ketList]
+                resClang[f'{optFlag}'] = pool.map(_compileGenBench, clangInput, self.chunksize)
+                pool.close()
+                pool.join()
+                if all(ret == ExitCode.ERR for ret in resClang[f'{optFlag}']):
+                    return 'No input for CFGgrind'
 
-            # benchDir/genBench <- clang
-            clangInput = [{'cFile': cf, 'ket': ty} for cf in resJotai if isinstance(cf, Path) for ty in self.ketList]
-            resClang = pool.map(_compileGenBench, clangInput, self.chunksize)
-            pool.close()
-            pool.join()
-            if all(ret == ExitCode.ERR for ret in resClang):
-                return 'No input for CFGgrind'
+        resValgrind: BenchInfo = {}
+        for optFlag in Clang.OptFlags:
+            with Pool(self.nproc, maxtasksperchild=self.mtpc) as pool:
 
-        with Pool(self.nproc, maxtasksperchild=self.mtpc) as pool:
+                cfgGrindInput = [{'cFile': cf, 'fnName' : fn, 'ket': ty, 'optFlag': optFlag} for (cf,fn) in resGenDesc if cf in resClang for ty in self.ketList]
+                resValgrind[f'{optFlag}'] = pool.map(_runCFGgrind, cfgGrindInput, self.chunksize)
+                pool.close()
+                pool.join()
 
-            cfgGrindInput = [{'cFile': cf, 'fnName' : fn, 'ket': ty} for (cf,fn) in resGenDesc if cf in resClang for ty in self.ketList]
-            resValgrind = pool.map(_runCFGgrind, cfgGrindInput, self.chunksize)
-            pool.close()
-            pool.join()
-
-        ubCounter = Counter([e['ExitCode'] for e in resValgrind])
-        try:
-            with open(f'{self.ubstats}', 'w') as ofhandle:
-                ofhandle.writelines(ubCounter)
-        except Exception as e: logging.error(f'{e}')
+        ubCounter: BenchInfo = {}
+        for o in Clang.OptFlags:
+            ubCounter[f'{o}'] = Counter([e['ExitCode'] for e in resValgrind[f'{o}']])
+            try:
+                with open(f'{self.ubstats}', 'w+') as ofhandle:
+                    ofhandle.write(f'Count: {o}\n')
+                    ofhandle.writelines(ubCounter[f'{o}'])
+                    ofhandle.write('\n')
+            except Exception as e: logging.error(f'{e}')
 
     return ExitCode.OK
 
