@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 # =========================================================================== #
 
+import logging
 from pathlib import Path
 
-from kotai.types import CmdResult, runproc
+from kotai.kotypes import CmdResult, runproc
 
 # --------------------------------------------------------------------------- #
 
@@ -36,6 +37,8 @@ class Jotai():
             f'{self.constraintsPath}',
             f'{self.descriptorPath}',
         ] + [*args]
+        logging.info(f'Running jotai with {self.constraintsPath=}, '
+                     f'{self.descriptorPath=}')
         return runproc(proc_args, Jotai.timeout)
 
 

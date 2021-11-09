@@ -3,7 +3,7 @@
 
 from pathlib import Path
 
-from kotai.types import CmdResult, runproc
+from kotai.kotypes import CmdResult, runproc
 
 class PrintDescriptors():
 

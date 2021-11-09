@@ -2,26 +2,11 @@
 # =========================================================================== #
 
 from pathlib import Path
-from typing import Literal
 
-from kotai.types import BenchInfo, runproc, CmdResult
+from kotai.kotypes import runproc, CmdResult, KonstrainExecType
 
 # --------------------------------------------------------------------------- #
 
-KonstrainExecType = Literal[
-    'all',
-    'int-bounds',
-    'big-arr',
-    'big-arr-10x'
-]
-KonstrainExecTypes: list[KonstrainExecType] = [
-    'int-bounds',
-    'big-arr',
-    'big-arr-10x'
-]
-
-class KonsInfo(BenchInfo):
-    ket: KonstrainExecType
 
 # --------------------------------------------------------------------------- #
 

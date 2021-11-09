@@ -2,11 +2,8 @@
 # =========================================================================== #
 
 from pathlib import Path
-from typing import Literal
 
-from kotai.types import CmdResult, runproc
-
-OptFlag = Literal['O0','O1','O2','O3','Os','Oz']
+from kotai.kotypes import CmdResult, OptLevel, runproc
 
 # --------------------------------------------------------------------------- #
 
@@ -20,38 +17,52 @@ class Clang():
 
     timeout: float = 3.0
 
-    OptFlags = ['O0','O1','O2','O3','Ofast','Oz','Os',]
+    OptLevels = ['0','1','2','3','fast','z','s',]
 
     # ---------------------------- Member attrs. ---------------------------- #
 
     __slots__ = (
-        'optFlag',
+        'optLevel',
         'ofile',
         'ifile',
     )
 
     # ----------------------------------------------------------------------- #
-    def __init__(self, optFlag: str, ofile: Path, ifile: Path):
-        self.optFlag: str = optFlag
-        self.ofile: Path  = ofile
-        self.ifile: Path  = ifile
+    def __init__(self, optLevel: OptLevel, ofile: Path, ifile: Path):
+        self.optLevel: str = optLevel
+        self.ofile: Path   = ofile
+        self.ifile: Path   = ifile
     # ----------------------------------------------------------------------- #
 
-    def runcmd(self, *args: str) -> CmdResult:
-        proc_args = [
-            f'{Clang.exe["clang"]}',
-            '-g',
-            '-ggdb',
-            '-Xclang',
-            '-disable-O0-optnone',
-            f'-{self.optFlag}',
-            '-std=c2x',
-            '-Wall',
-            '-fno-stack-protector',
-            '-no-pie',
-            '-o', f'{self.ofile}',
-            f'{self.ifile}',
-        ] + [*args]
+    def runcmd(self) -> CmdResult:
+        if self.optLevel == 'O0':
+            proc_args = [
+                f'{Clang.exe["clang"]}',
+                '-g',
+                '-ggdb',
+                '-Xclang',
+                '-disable-O0-optnone',
+                f'-O0',
+                '-std=c2x',
+                '-Wall',
+                '-fno-stack-protector',
+                '-no-pie',
+                '-o', f'{self.ofile}',
+                f'{self.ifile}',
+            ]
+        else:
+            proc_args = [
+                f'{Clang.exe["clang"]}',
+                '-g',
+                '-ggdb',
+                f'-{self.optLevel}',
+                '-std=c2x',
+                '-Wall',
+                '-fno-stack-protector',
+                '-no-pie',
+                '-o', f'{self.ofile}',
+                f'{self.ifile}',
+            ]
         return runproc(proc_args, Clang.timeout)
 
 

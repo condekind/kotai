@@ -2,7 +2,7 @@
 
 import logging, datetime
 
-from kotai.types import ExitCode
+from kotai.kotypes import ExitCode
 
 
 # --------------------------------------------------------------------------- #

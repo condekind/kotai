@@ -3,7 +3,7 @@
 
 from pathlib import Path
 
-from kotai.types import ExitCode, CmdResult, runproc
+from kotai.kotypes import ExitCode, CmdResult, runproc
 
 # --------------------------------------------------------------------------- #
 

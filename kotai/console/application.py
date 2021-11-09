@@ -7,14 +7,15 @@ from pathlib import Path
 from multiprocessing import Pool
 from typing import Counter
 
-from kotai.constraints.genkonstrain import Konstrain, KonstrainExecType, KonstrainExecTypes
+from kotai.constraints.genkonstrain import Konstrain
 from kotai.plugin.PrintDescriptors import PrintDescriptors
 from kotai.plugin.Jotai import Jotai
 from kotai.plugin.Clang import Clang
 from kotai.plugin.CFGgrind import CFGgrind
 from kotai.templates.benchmark import GenBenchTemplatePrefix
-from kotai.types import BenchInfo, ExitCode, FileWithFnName, SysExitCode, logret
+from kotai.kotypes import BenchInfo, Failure, ExitCode, LogThen, OptLevel, OptLevels, SysExitCode, KonstrainExecType, KonstrainExecTypes, setLog, success, failure, valid
 from kotai.logconf import logFmt, sep
+
 
 # --------------------------------------------------------------------------- #
 '''
@@ -47,55 +48,72 @@ class Application:
         self.inputdir: list[str]
         self.nproc: int
         self.chunksize: int
-        self.buildpath: str
+        self.optLevels: list[OptLevel] = []
+        self.ketList: list[KonstrainExecType] = []
         self.logfile: str
         self.ubstats: str
-        self.ketList: list[KonstrainExecType]
-        validkets = KonstrainExecTypes + ['all']
 
         self.args = argparse.Namespace()
         cli = argparse.ArgumentParser(
             prog='python -m kotai',
             description='Jotai options'
         )
-        #cli.add_argument('-B', '--buildpath', default='./build')
-        cli.add_argument('-c', '--clean', action='store_true', default=False)
-        cli.add_argument('-i', '--inputdir', nargs='+', required=True)
-        cli.add_argument('-j', '--nproc', type=int, default=8)
+
+        cli.add_argument('-c', '--clean',     action='store_true', default=False)
+        cli.add_argument('--no-log',          action='store_true', default=False)
+        cli.add_argument('-i', '--inputdir',  type=str, nargs='+', required=True)
+        cli.add_argument('-j', '--nproc',     type=int, default=8)
         cli.add_argument('-J', '--chunksize', type=int, default=-1)
-        cli.add_argument('-K', choices=validkets, default='all')
+        cli.add_argument('-K',         type=str, nargs='+', choices=KonstrainExecTypes, default='big-arr')
+        cli.add_argument('--optLevel', type=str, nargs='+', choices=OptLevels,          default='O0')
         cli.add_argument('-L', '--logfile', default='./output/jotai.log')
         cli.add_argument('-u', '--ubstats', default='./output/ubstats.txt')
         cli.parse_args(namespace=self.args)
 
         # [-i]
-        self.inputBenchmarks = [Path(p) for p in self.args.inputdir]
+        self.inputBenchmarks = [P for p in self.args.inputdir
+                                  if (P := Path(p)).exists()]
 
         # [-j]
-        self.nproc = self.args.nproc if self.args.nproc > 1 else 1
+        self.nproc      = (self.args.nproc if self.args.nproc > 1
+                           else 1)
 
         # [-J]
-        self.chunksize = self.args.chunksize if self.args.chunksize > 1 else 64
+        self.chunksize  = (self.args.chunksize if self.args.chunksize > 1
+                           else 64)
 
         # [-K]
-        if self.args.K not in KonstrainExecTypes:
-            self.ketList = [ket for ket in KonstrainExecTypes]
+        if 'all' in self.args.K:
+            self.ketList = KonstrainExecTypes
         else:
-            self.ketList = [self.args.K]
+            self.ketList = (kets if (kets := [ket for ket in self.args.K if ket in KonstrainExecTypes])
+                              else ['big-arr'])
 
-        # [-L] Creates logfile if it doesn't exist
-        try:
-            with open(self.args.logfile, 'x'): pass
-        except FileExistsError: pass
+        # [--optLevel]
+        if 'all' in self.args.optLevel:
+            self.optLevels = list(OptLevels)
+        else:
+            self.optLevels = (opts if (opts := [opt for opt in self.args.optLevel if opt in OptLevels])
+                              else ['O0'])
 
-        # Logging defaults
-        logging.basicConfig(
-            filename=self.args.logfile,
-            filemode='w+',
-            format=logFmt,
-            level=logging.DEBUG
-        )
-        logging.debug(f'{self.args=}')
+        self.ubstats = self.args.ubstats
+
+        if self.args.no_log:
+            # [--no-log] Disable logging
+            logger = logging.getLogger()
+            logger.propagate = False
+            logger.disabled = True
+            setLog(False)
+        else:
+            # [-L] Logging defaults
+            setLog(True)
+            logging.basicConfig(
+                filename=self.args.logfile,
+                filemode='w+',
+                format=logFmt,
+                level=logging.DEBUG
+            )
+            logging.debug(f'{self.args=}')
 
 
     def start(self, ) -> SysExitCode:
@@ -106,154 +124,175 @@ class Application:
 
 # Deletes the files generated by this program on a previous run
 def _cleanFn(pArgs: BenchInfo) -> ExitCode:
-    cFile: Path = pArgs['cFile']
-    cFileMetaDir = cFile.with_suffix('.d')
-    genFiles = cFileMetaDir.glob('*')
+    cFileMetaDir = pArgs.cFilePath.with_suffix('.d')
+    genFiles     = cFileMetaDir.glob('*')
+
+    # For each file inside the bench.d folder
     for file in genFiles:
+
+        # Delete it
         try: file.unlink(missing_ok=True)
         except Exception as e:
-            logging.error(f'{e}: {file=}')
+            logging.error(f'{e}: {file}')
             continue
+
+    # Finally, delete the .d folder
     try: cFileMetaDir.rmdir()
-    except Exception as e: return logret(f'{e}: {cFileMetaDir=}').err
-    return logret(f'Deleted {cFileMetaDir=}', level='info').err
+    except Exception as e:
+        return LogThen.Err(f'{e}: {cFileMetaDir}')
+
+    return LogThen.Ok(f'Deleted {cFileMetaDir}')
 
 
-# Called by _genDescriptor to save the fn name found in the benchmark.
-# The name is important because we gather stats later with:
-# cfggrind_info -f "benchBinPath::fnName" -s functions ...
-def _getFnName(desc: str) -> ExitCode | str:
-    tokens = [t for t in desc.split() if t]
+def getFnName(descriptor: str) -> str | Failure:
+    '''
+    Called by _genDescriptor to retrieve the fn name found in the benchmark.
+    The name is important because we gather stats later with:
+    $ cfggrind_info -f "benchBinPath::fnName" -s functions ...
+    '''
 
-    if 'no-params' in tokens:        return ExitCode.ERR
-    if tokens.count('function') > 1: return ExitCode.ERR
+    tokens = [t for t in descriptor.split() if t]
+
+    if 'no-params' in tokens:        return failure
+    if tokens.count('function') > 1: return failure
 
     # The fn name is the token after the 'function' keyword
     # The -1 excludes the last token, to avoid IndexError when we +1
-    try: fn = tokens[tokens.index('function', 0, -1) + 1]
-    except Exception:                return ExitCode.ERR
+    try: fn = '' + tokens[tokens.index('function', 0, -1) + 1]
+    except Exception:                return failure
     else:                            return fn
 
 
 # Worker function mapped in a multiprocessing.Pool to run PrintDescriptors
-def _genDescriptor(args: BenchInfo) -> ExitCode | FileWithFnName:
-    cFile: Path = args['cFile']
+def _genDescriptor(pArgs: BenchInfo) -> BenchInfo:
 
-    printDescriptorsPlugin = PrintDescriptors(cFile)
-    msg, err = printDescriptorsPlugin.runcmd()
+    cFilePath = pArgs.cFilePath
 
-    # If error: returns before creating the descriptor file
-    if err == ExitCode.ERR:
-        logging.error(f'PrintDescriptors error: {msg=}')
-        return ExitCode.ERR
+    msg, err = PrintDescriptors(cFilePath).runcmd()
 
-    fnName = _getFnName(msg)
-    logging.debug(f'{fnName=}')
-    if fnName == ExitCode.ERR:
-        return ExitCode.ERR
+    # If the PrintDescriptors plugin fails, return before creating the file
+    if err == failure:
+        return pArgs.Err(f'PrintDescriptors [{cFilePath}]:"{msg=}"')
+
+    # If the fnName isn't found, return before creating the file
+    if (fnName := getFnName(msg)) == failure:
+        return pArgs.Err(f'{fnName=}')
 
     # Creates the output dir for the current cFile
-    cFileMetaDir = cFile.with_suffix('.d')
+    cFileMetaDir = cFilePath.with_suffix('.d')
     try: cFileMetaDir.mkdir(parents=True, exist_ok=True)
-    except PermissionError as pe:
-        logging.error(f'{pe}: could not create dir {cFileMetaDir=}')
-        return ExitCode.ERR
+    except Exception as e:
+        return pArgs.Err(f'{e}: PrintDescriptors [{cFileMetaDir}]')
 
-    # Creates the descriptor
+    # Creates the descriptor file
     descriptorPath = cFileMetaDir / 'descriptor'
-    try: descFile = open(descriptorPath, 'w', encoding='utf-8')
-    except PermissionError as pe:
-        logging.error(f'{pe}: could not create file {descriptorPath=}')
-        return ExitCode.ERR
-    else:
-        with descFile:
-            try: print(msg, file=descFile)
-            except Exception as e:
-                logging.error(f'{e}: could not write to {descFile=}')
-                return ExitCode.ERR
+    try:
+        with open(descriptorPath, 'w', encoding='utf-8') as descFile:
+            descFile.write(msg)
+    except Exception as e:
+        return pArgs.Err(f'{e}: PrintDescriptors [{descriptorPath}]')
 
-    logging.info(f'{descriptorPath=} written:\n{msg}\n{sep}')
-    assert(isinstance(fnName, str))
-    return (cFile, fnName)
+    return BenchInfo(cFilePath, fnName)
 
 
 # Worker function mapped in a multiprocessing.Pool to run Konstrain
-def _runKonstrain(pArgs: BenchInfo) -> ExitCode | Path:
-    cFile: Path            = pArgs['cFile']
-    ket: KonstrainExecType = pArgs['ket']
-    cFileMetaDir           = cFile.with_suffix('.d')
+def _runKonstrain(pArgs: BenchInfo) -> BenchInfo:
+    cFilePath              = pArgs.cFilePath
+    ket: KonstrainExecType = pArgs.ket
+    cFileMetaDir           = cFilePath.with_suffix('.d')
     descriptorPath         = cFileMetaDir / 'descriptor'
     constraintsPath        = cFileMetaDir / f'constraint_{ket}'
 
-    konstrain = Konstrain(descriptorPath, ket, constraintsPath)
+    msg, err = Konstrain(descriptorPath, ket, constraintsPath).runcmd()
 
-    logging.info(f'Running konstrain on {cFile}')
-    return cFile if konstrain.runcmd().err != ExitCode.ERR else ExitCode.ERR
+    if err == failure:
+        return pArgs.Err(f'Konstrain [{cFilePath}]:"{msg=}"')
+
+    return pArgs
 
 
-def _runJotai(pArgs: BenchInfo) -> ExitCode | Path:
-    cFile: Path            = pArgs['cFile']
-    ket: KonstrainExecType = pArgs['ket']
+# Worker function mapped in a multiprocessing.Pool to run Jotai
+def _runJotai(pArgs: BenchInfo) -> BenchInfo:
+    '''
+    Creates genBenchFile: a main() entry point to the original benchmark.
 
-    # genBenchFile buffer, starting with headers
+    Individual sections of the result are added to a buffer, which is only
+    stored to disk (genBenchFile) if every step was successful.
+
+    The headers, defines and typedefs are added to the buffer, then Jotai is
+    used to generate the mainFn body (as a string), which declares and
+    initializes variables needed by the benchFn.
+    '''
+
+    cFilePath              = pArgs.cFilePath
+    ket: KonstrainExecType = pArgs.ket
+
     # buffer <- includes, defines, typedefs and runtime info placeholder
     genBuffer = GenBenchTemplatePrefix
 
     # buffer += original benchmark function
     try:
-        with open(cFile, 'r', encoding='utf-8') as cFile_RO:
-            genBuffer += cFile_RO.read()
+        with open(cFilePath, 'r', encoding='utf-8') as cFileHandle:
+            genBuffer += cFileHandle.read()
             genBuffer += f'\n\n\n{sep}\n\n'
-    except Exception as e: return logret(e).err
+    except Exception as e:
+        return pArgs.Err(f'{e}')
 
-    cFileMetaDir    = cFile.with_suffix('.d')
+    cFileMetaDir    = cFilePath.with_suffix('.d')
     descriptorPath  = cFileMetaDir / 'descriptor'
     constraintsPath = cFileMetaDir / f'constraint_{ket}'
-    jotai           = Jotai(constraintsPath, descriptorPath)
 
-    logging.info(f'Running jotai with {constraintsPath=}, {descriptorPath=}')
-    mainFn, err     = jotai.runcmd()
+    # Jotai's result
+    mainFn, err     = Jotai(constraintsPath, descriptorPath).runcmd()
 
-    # If error: returns before creating the descriptor file
-    if err == ExitCode.ERR: return logret(f'Jotai error: {mainFn=}').err
-    else: genBuffer += mainFn
+    # If error: returns before creating the genbench file
+    if err == failure:
+        return pArgs.Err(f'Jotai:\n{mainFn}\n')
+
+    # buffer += mainFn body from successful Jotai run
+    genBuffer += mainFn
 
     # Creates the genBench file and writes the buffer to it
-    genBenchPath = cFileMetaDir / f'{cFile.stem}_{ket}.c'
+    genBenchPath = cFileMetaDir / f'{cFilePath.stem}_{ket}.c'
     try:
         with open(genBenchPath, 'w', encoding='utf-8') as genBenchFile:
             try: genBenchFile.write(genBuffer)
-            except Exception as e: return logret(e).err
-    except Exception as e: return logret(e).err
+            except Exception as e:
+                return pArgs.Err(f'{e}')
 
-    return cFile
+    except Exception as e:
+        return pArgs.Err(f'{e}')
+
+    return pArgs
 
 
-def _compileGenBench(pArgs: BenchInfo) -> ExitCode | Path:
-    cFile: Path            = pArgs['cFile']
-    ket: KonstrainExecType = pArgs['ket']
-    optFlag                = pArgs['optFlag']
-    cFileMetaDir           = cFile.with_suffix('.d')
-    genBenchPath           = cFileMetaDir / f'{cFile.stem}_{ket}.c'
-    genBinPath             = cFileMetaDir / f'{cFile.stem}_{ket}_{optFlag}'
+def _compileGenBench(pArgs: BenchInfo) -> BenchInfo:
+    cFilePath    = pArgs.cFilePath
+    ket          = pArgs.ket
+    optLevel     = pArgs.optLevel
+    cFileMetaDir = cFilePath.with_suffix('.d')
+    genBenchPath = cFileMetaDir / f'{cFilePath.stem}_{ket}.c'
+    genBinPath   = cFileMetaDir / f'{cFilePath.stem}_{ket}_{optLevel}'
 
     # Compiles the genBench into a binary
-    clang = Clang(optFlag=optFlag, ofile=genBinPath, ifile=genBenchPath)
-    return cFile if clang.runcmd().err != ExitCode.ERR else ExitCode.ERR
+    _, err = Clang(optLevel, ofile=genBinPath, ifile=genBenchPath).runcmd()
+
+    return (pArgs if err != failure
+            else pArgs.Err())
 
 
 def _runCFGgrind(pArgs: BenchInfo) -> BenchInfo:
-    cFile: Path            = pArgs['cFile']
-    ket: KonstrainExecType = pArgs['ket']
-    optFlag                = pArgs['optFlag']
-    fnName: str            = pArgs['fnName']
-    cFileMetaDir           = cFile.with_suffix('.d')
-    optFlag                = 'O0'
-    genBinPath             = cFileMetaDir / f'{cFile.stem}_{ket}_{optFlag}'
+    cFilePath              = pArgs.cFilePath
+    ket                    = pArgs.ket
+    optLevel               = pArgs.optLevel
+    cFileMetaDir           = cFilePath.with_suffix('.d')
+    genBinPath             = cFileMetaDir / f'{cFilePath.stem}_{ket}_{optLevel}'
+    ''' Runs valgrind-memcheck, cfgg-asmmap, valgrind-cfgg and cfgg-info '''
 
-    # Compiles the genBench into a binary
-    cfgg = CFGgrind(genBinPath, fnName)
-    return {'cFile': cFile, 'ExitCode': cfgg.runcmd().err }
+    res, err = CFGgrind(genBinPath, pArgs.fnName).runcmd()
+
+    return (pArgs if err != failure
+            else pArgs.Err(f'CFGgrind:\n{res}\n'))
 
 
 def _start(self: Application, ) -> SysExitCode:
@@ -261,91 +300,64 @@ def _start(self: Application, ) -> SysExitCode:
     # For each directory passed with -i/--inputdir, do:
     for benchDir in self.inputBenchmarks:
 
-        ## TODO: Finish this optimization
-        ## Get all .c files in that directory and exclude the ones that were
-        ## already used to generate a descriptor in a previous run
-        #dFiles  = list(benchDir.glob('*.d/descriptor'))
-        #cFiles  =  [cf for cf
-        #            in benchDir.glob('*.c')
-        #            if cf.with_suffix('.d') / Path('descriptor') not in dFiles]
-        #kcfiles =  {kf.parent.with_suffix('.c') for kf
-        #            in benchDir.glob('*.d/constraint*')}
-        #cFiles  =  [cf for cf in cFiles if cf not in kcfiles]
+        pArgs = [BenchInfo(cf) for cf in benchDir.glob('*.c')]
 
-        cFiles = [cf for cf in benchDir.glob('*.c')]
-        pArgs: list[BenchInfo] = [{'cFile': cf} for cf in cFiles]
-
+        # [-c] Deletes 
         if self.args.clean:
             with Pool(self.nproc) as pool:
-                pool.map(_cleanFn, pArgs, self.chunksize)
+                pool.map(_cleanFn, pArgs, len(pArgs) // self.nproc // 2 + 1)
                 pool.close()
                 pool.join()
-            return ExitCode.OK
+            return success
 
 
         with Pool(self.nproc, maxtasksperchild=self.mtpc) as pool:
 
             # benchDir/descriptor <- PrintDescriptors
-            resGenDesc = [r for r in pool.map(_genDescriptor, pArgs, self.chunksize) if not isinstance(r, ExitCode)]
-            cFilesPD = [cf for cf, _ in resGenDesc]
-            #lst1, lst2 = zip(*zipped_list)
-            pool.close()
-            pool.join()
+            resGenDesc = [r for r in pool.map(_genDescriptor, pArgs, self.chunksize) if valid(r)]
+            if not resGenDesc:
+                return '[PrintDescriptors] No descriptors were generated'
 
-            if not cFilesPD:
-                return 'No input for Konstrain'
-
-        with Pool(self.nproc, maxtasksperchild=self.mtpc) as pool:
+            konsInput = [BenchInfo(bi.cFilePath, bi.fnName, ket=ket)
+                         for bi in resGenDesc for ket in self.ketList]
 
             # benchDir/constraints <- Konstrain
-            konsInput = [{'cFile': cf, 'ket': ty} for cf in cFilesPD for ty in self.ketList]
-            resKons = pool.map(_runKonstrain, konsInput, self.chunksize)
-            pool.close()
-            pool.join()
-            if all(ret == ExitCode.ERR for ret in resKons):
-                return 'No input for Jotai'
-
-        with Pool(self.nproc, maxtasksperchild=self.mtpc) as pool:
+            resKons = [r for r in pool.map(_runKonstrain, konsInput, self.chunksize) if valid(r)]
+            if not resKons:
+                return '[Konstrain] No constraints were generated'
 
             # benchDir/genBench.c <- Jotai
-            jotaiInput = [{'cFile': cf, 'ket': ty} for cf in resKons if isinstance(cf, Path) for ty in self.ketList]
-            resJotai = pool.map(_runJotai, jotaiInput, self.chunksize)
+            resJotai = [r for r in pool.map(_runJotai, resKons, self.chunksize) if valid(r)]
+            if not resJotai:
+                return '[Jotai] No benchmarks with entry points were generated'
+
+            clangInput = [BenchInfo(bi.cFilePath, bi.fnName, bi.ket, optLevel)
+                          for bi in resJotai for optLevel in self.optLevels]
+
+            # benchDir/genBench <- clang
+            resClang = [r for r in pool.map(_compileGenBench, clangInput, self.chunksize) if valid(r)]
+
+            if not resClang:
+                return '[Clang] No benchmarks with entry points compiled successfully'
+
+            resValgrind = [r for r in pool.map(_runCFGgrind, resClang, self.chunksize)]
+            if not resValgrind:
+                return '[Valgrind/CFGgrind] No binary executed successfully'
+
             pool.close()
             pool.join()
-            if all(ret == ExitCode.ERR for ret in resJotai):
-                return 'No input for clang'
 
-        resClang: BenchInfo = {}
-        for optFlag in Clang.OptFlags:
-            with Pool(self.nproc, maxtasksperchild=self.mtpc) as pool:
-                # benchDir/genBench <- clang
-                clangInput = [{'cFile': cf, 'ket': ty, 'optFlag': optFlag} for cf in resJotai if isinstance(cf, Path) for ty in self.ketList]
-                resClang[f'{optFlag}'] = pool.map(_compileGenBench, clangInput, self.chunksize)
-                pool.close()
-                pool.join()
-                if all(ret == ExitCode.ERR for ret in resClang[f'{optFlag}']):
-                    return 'No input for CFGgrind'
+        # TODO: Refine this
+        ubCounter = {}
+        ubCounter = Counter([(e.optLevel, e.exitCode) for e in resValgrind])
+        try:
+            with open(self.ubstats, 'w+') as ofhandle:
+                ofhandle.write('Undefined behavior count:\n')
+                ofhandle.writelines([f'{v, c}' for v, c in ubCounter.items()])
+                ofhandle.write('\n')
+        except Exception as e: logging.error(f'{e}')
 
-        resValgrind: BenchInfo = {}
-        for optFlag in Clang.OptFlags:
-            with Pool(self.nproc, maxtasksperchild=self.mtpc) as pool:
-
-                cfgGrindInput = [{'cFile': cf, 'fnName' : fn, 'ket': ty, 'optFlag': optFlag} for (cf,fn) in resGenDesc if cf in resClang for ty in self.ketList]
-                resValgrind[f'{optFlag}'] = pool.map(_runCFGgrind, cfgGrindInput, self.chunksize)
-                pool.close()
-                pool.join()
-
-        ubCounter: BenchInfo = {}
-        for o in Clang.OptFlags:
-            ubCounter[f'{o}'] = Counter([e['ExitCode'] for e in resValgrind[f'{o}']])
-            try:
-                with open(f'{self.ubstats}', 'w+') as ofhandle:
-                    ofhandle.write(f'Count: {o}\n')
-                    ofhandle.writelines(ubCounter[f'{o}'])
-                    ofhandle.write('\n')
-            except Exception as e: logging.error(f'{e}')
-
-    return ExitCode.OK
+    return success
 
 
 def main() -> SysExitCode:
