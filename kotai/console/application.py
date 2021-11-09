@@ -349,7 +349,7 @@ def _start(self: Application, ) -> SysExitCode:
 
         # TODO: Refine this
         ubCounter = {}
-        ubCounter = Counter([(e.optLevel, e.exitCode) for e in resValgrind])
+        ubCounter = Counter([(e.optLevel, e.exitCode.name) for e in resValgrind])
         try:
             with open(self.ubstats, 'w+') as ofhandle:
                 ofhandle.write('Undefined behavior count:\n')

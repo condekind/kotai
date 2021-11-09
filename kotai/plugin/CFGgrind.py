@@ -2,6 +2,7 @@
 # =========================================================================== #
 
 from pathlib import Path
+from shutil import which
 
 from kotai.kotypes import ExitCode, CmdResult, runproc
 
@@ -31,7 +32,7 @@ class CFGgrind:
 
     # ----------------------------------------------------------------------- #
     def __init__(self, binPath: Path, benchFn: str):
-        self.binPath = binPath
+        self.binPath = b if (b := which(binPath)) else ''
         self.benchFn = benchFn
 
         ''' path/to/benchName.d/benchName_optFlag.map '''
@@ -58,7 +59,7 @@ class CFGgrind:
             f'{CFGgrind.exe["valgrind"]}',
             '--tool=memcheck',
             '--error-exitcode=1',
-            f'./{self.binPath}',
+            f'{self.binPath}',
         ] + [*args]  # e.g., switch-case 'idx'
         #print(f'valgrind: {proc_args}')
         return runproc(proc_args, timeout)
@@ -70,7 +71,7 @@ class CFGgrind:
             '--tool=cfggrind',
             f'--cfg-outfile={self.cfgOutFilePath}',
             f'--instrs-map={self.mapFilePath}',
-            f'./{self.binPath}',
+            f'{self.binPath}',
         ] + [*args]  # e.g., switch-case 'idx'
         #print(f'valgrind: {proc_args}')
         return runproc(proc_args, timeout)
@@ -79,7 +80,7 @@ class CFGgrind:
     def _run_cfggrind_info(self, timeout: float, *args: str) -> CmdResult:
         proc_args = [
             f'{CFGgrind.exe["cfggrind_info"]}',
-            '-f', f'{self.binPath.name}::{self.benchFn}',
+            '-f', f'{Path(self.binPath).name}::{self.benchFn}',
             '-s', 'functions',
             '-m', 'json',
             f'{self.cfgOutFilePath}'
