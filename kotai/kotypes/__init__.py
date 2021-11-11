@@ -115,29 +115,33 @@ class BenchInfo:
     __slots__ = (
                  'cFilePath',
                  'fnName',
-                 'ket',
-                 'optLevel',
-                 'exitCode',
+                 'ketList',
+                 'optLevelList',
+                 'exitCodes',
                  )
 
     def __init__(self,
                  cFilePath: Path,
                  fnName: str = '',
-                 ket: KonstrainExecType = '',
-                 optLevel: OptLevel = '',
-                 exitCode: ExitCode = success,
+                 ketList: list[KonstrainExecType] = [],
+                 optLevelList: list[OptLevel] = [],
+                 exitCodes: dict[Any, ExitCode] = {},
             ) -> None:
 
         self.cFilePath: Path        = cFilePath
         self.fnName: str            = fnName
-        self.ket: KonstrainExecType = ket
-        self.optLevel: OptLevel     = optLevel
-        self.exitCode: ExitCode     = exitCode
+        self.ketList: list[KonstrainExecType] = ketList
+        self.optLevelList: list[OptLevel]     = optLevelList
+        self.exitCodes: dict[Any, ExitCode] = exitCodes
 
-    def __bool__(self): return bool(self.exitCode)
+    #def __bool__(self): return bool(self.exitCode)
+    def __bool__(self): return any(self.exitCodes.values())
 
-    def Err(self, logmsg: str = '', level: LogLevel = 'debug'):
-        self.exitCode = failure
+    def setExitCodes(self, exitCodes: dict[Any, ExitCode]) -> None:
+        self.exitCodes = exitCodes
+
+    def Err(self, key:Any, logmsg: str = '', level: LogLevel = 'debug'):
+        self.exitCodes = {key: failure}
         if logmsg: Log[level](logmsg)
         return self
 
@@ -156,7 +160,7 @@ SysExitCode = ExitCode | str
 # CmdResult just models (result,errcode) as (str,int)
 class CmdResult(NamedTuple):
     msg: str
-    err: ExitCode = ExitCode.ERR
+    err: ExitCode = failure
 
 
 # When returning, if logging is desired, this allows `return logret(msg, ret)`
@@ -180,22 +184,6 @@ class LogThen:
         return failure
 
 
-def res2utf8(out: bytes, err: bytes, errIsOut: bool) -> CmdResult:
-    '''
-    subprocess.run() Result To UTF-8 (plus ExitCode)
-
-    Tries to decode stdout/stderr of the completed process, logging the steps
-    when appropriate. Both successful outputs and raised exceptions are
-    converted into error-values (str, ExitCode). The value of proc.returncode
-    dictates whether stdout or stderr are used.
-    '''
-    outStream = err if errIsOut else out
-
-    try: pout = outStream.decode('utf-8')
-    except Exception as e: return logret(e)
-    else: return CmdResult(pout, ExitCode.OK)
-
-
 def out2file(ret: CmdResult, ofpath: Path, breakLines: bool) -> CmdResult:
     try:
         with open(ofpath, 'w+', encoding='utf-8') as fout:
@@ -214,6 +202,7 @@ def out2file(ret: CmdResult, ofpath: Path, breakLines: bool) -> CmdResult:
         return logret(e)
     else:
         return ret
+
 
 def runproc(proc_args: list[str], timeout: float,
             ofpath: Path | None = None, breakLines: bool = False) -> CmdResult:
@@ -251,9 +240,24 @@ def runproc(proc_args: list[str], timeout: float,
 _T_co = TypeVar("_T_co", covariant=True)
 _T1 = TypeVar("_T1")
 _T2 = TypeVar("_T2")
-
-# [(out0, err0), (out1, err1)] -> [(out0, out1), (err0, err1)]
 class unzip(Iterator[_T_co], Generic[_T_co]):
+    '''
+    Opposite of zip(), as the example shows:
+    ```
+    res = [(out, err) for out, err in fn(...)]
+    >>> [(out0, err0), (out1, err1), (out2, err2)]
+
+    [_ for _ in unzip(res)]
+    >>> [(out0, out1, out2), (err0, err1, err2)]
+    ```
+
+    You can also see this as "transpose", however it was made for and only
+    tested for [N,2] -> [2,N] dimensions. The type checker will likely complain
+    for other values.
+
+    See https://github.com/python/typeshed/blob/master/stdlib/builtins.pyi for
+    ideas on how to extend the type annotations if you need it.
+    '''
     def __new__(cls, iterable: Iterable[tuple[_T1 | _T2]]
                 ) -> Iterable[ Iterable[_T1 | _T2] ]:
         return zip(*iterable)

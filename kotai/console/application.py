@@ -5,7 +5,7 @@ import argparse
 import logging
 from pathlib import Path
 from multiprocessing import Pool
-from typing import Counter
+from typing import Any, Counter
 
 from kotai.constraints.genkonstrain import Konstrain
 from kotai.plugin.PrintDescriptors import PrintDescriptors
@@ -172,17 +172,17 @@ def _genDescriptor(pArgs: BenchInfo) -> BenchInfo:
 
     # If the PrintDescriptors plugin fails, return before creating the file
     if err == failure:
-        return pArgs.Err(f'PrintDescriptors [{cFilePath}]:"{msg=}"')
+        return pArgs.Err('descriptor', f'PrintDescriptors [{cFilePath}]:"{msg=}"')
 
     # If the fnName isn't found, return before creating the file
     if (fnName := getFnName(msg)) == failure:
-        return pArgs.Err(f'{fnName=}')
+        return pArgs.Err('descriptor', f'{fnName=}')
 
     # Creates the output dir for the current cFile
     cFileMetaDir = cFilePath.with_suffix('.d')
     try: cFileMetaDir.mkdir(parents=True, exist_ok=True)
     except Exception as e:
-        return pArgs.Err(f'{e}: PrintDescriptors [{cFileMetaDir}]')
+        return pArgs.Err('descriptor', f'{e}: PrintDescriptors [{cFileMetaDir}]')
 
     # Creates the descriptor file
     descriptorPath = cFileMetaDir / 'descriptor'
@@ -190,23 +190,51 @@ def _genDescriptor(pArgs: BenchInfo) -> BenchInfo:
         with open(descriptorPath, 'w', encoding='utf-8') as descFile:
             descFile.write(msg)
     except Exception as e:
-        return pArgs.Err(f'{e}: PrintDescriptors [{descriptorPath}]')
+        return pArgs.Err('descriptor', f'{e}: PrintDescriptors [{descriptorPath}]')
 
-    return BenchInfo(cFilePath, fnName)
+    return BenchInfo(pArgs.cFilePath,
+                     fnName=fnName,
+                     ketList=pArgs.ketList,
+                     optLevelList=pArgs.optLevelList,
+                     exitCodes={'descriptor': success})
 
 
 # Worker function mapped in a multiprocessing.Pool to run Konstrain
 def _runKonstrain(pArgs: BenchInfo) -> BenchInfo:
     cFilePath              = pArgs.cFilePath
-    ket: KonstrainExecType = pArgs.ket
+    ketList: list[KonstrainExecType] = pArgs.ketList
     cFileMetaDir           = cFilePath.with_suffix('.d')
     descriptorPath         = cFileMetaDir / 'descriptor'
-    constraintsPath        = cFileMetaDir / f'constraint_{ket}'
 
-    msg, err = Konstrain(descriptorPath, ket, constraintsPath).runcmd()
+    exitCodes: dict[Any, ExitCode] = {}
 
-    if err == failure:
-        return pArgs.Err(f'Konstrain [{cFilePath}]:"{msg=}"')
+    for ket in ketList:
+
+        msg, err = Konstrain(descriptorPath, ket, cFileMetaDir / f'constraint_{ket}').runcmd()
+
+        if err == failure:
+            exitCodes[ket] = failure
+            logging.error(f'Konstrain {ket} [{cFilePath}]:"{msg=}"')
+        else:
+            exitCodes[ket] = success
+
+    pArgs.setExitCodes(exitCodes)
+    return pArgs
+
+
+
+'''
+class 
+
+'''
+
+def _runPolly(pArgs: BenchInfo) -> BenchInfo:
+    # 
+
+    '''
+    
+
+    '''
 
     return pArgs
 
@@ -300,7 +328,8 @@ def _start(self: Application, ) -> SysExitCode:
     # For each directory passed with -i/--inputdir, do:
     for benchDir in self.inputBenchmarks:
 
-        pArgs = [BenchInfo(cf) for cf in benchDir.glob('*.c')]
+        #self.optLevelList
+        pArgs = [BenchInfo(cf, ketList=self.ketList, optLevelList=[]) for cf in benchDir.glob('*.c')]
 
         # [-c] Deletes 
         if self.args.clean:
@@ -318,13 +347,15 @@ def _start(self: Application, ) -> SysExitCode:
             if not resGenDesc:
                 return '[PrintDescriptors] No descriptors were generated'
 
-            konsInput = [BenchInfo(bi.cFilePath, bi.fnName, ket=ket)
-                         for bi in resGenDesc for ket in self.ketList]
-
             # benchDir/constraints <- Konstrain
-            resKons = [r for r in pool.map(_runKonstrain, konsInput, self.chunksize) if valid(r)]
+            resKons = [r for r in pool.map(_runKonstrain, resGenDesc, self.chunksize) if valid(r)]
             if not resKons:
                 return '[Konstrain] No constraints were generated'
+
+            # >>> We're 
+            # pollyInput = [BenchInfo(bi.cFilePath, bi.fnName)
+            #               for bi in resGenDesc]
+            # resPolly = [r for r in pool.map(_runPolly, resKons, self.chunksize) if valid(r)]
 
             # benchDir/genBench.c <- Jotai
             resJotai = [r for r in pool.map(_runJotai, resKons, self.chunksize) if valid(r)]
