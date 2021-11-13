@@ -9,7 +9,8 @@ progName=$0
 ------------------------------------- $1: -------------------------------------"
     }
 
-    optLevels=( O0 O1 O2 O3 Ofast Os Oz )
+    #optLevels=( O0 O1 O2 O3 Ofast Os Oz )
+    optLevels=( O0 )
 
     countIntermediateFiles() {
 

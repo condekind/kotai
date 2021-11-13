@@ -118,6 +118,7 @@ class BenchInfo:
                  'ketList',
                  'optLevelList',
                  'exitCodes',
+                 'descriptor'
                  )
 
     def __init__(self,
@@ -126,13 +127,15 @@ class BenchInfo:
                  ketList: list[KonstrainExecType] = [],
                  optLevelList: list[OptLevel] = [],
                  exitCodes: dict[Any, ExitCode] = {},
+                 descriptor: str = '',
             ) -> None:
 
-        self.cFilePath: Path        = cFilePath
-        self.fnName: str            = fnName
+        self.cFilePath: Path                  = cFilePath
+        self.fnName: str                      = fnName
         self.ketList: list[KonstrainExecType] = ketList
         self.optLevelList: list[OptLevel]     = optLevelList
-        self.exitCodes: dict[Any, ExitCode] = exitCodes
+        self.exitCodes: dict[Any, ExitCode]   = exitCodes
+        self.descriptor: str                  = descriptor
 
     #def __bool__(self): return bool(self.exitCode)
     def __bool__(self): return any(self.exitCodes.values())

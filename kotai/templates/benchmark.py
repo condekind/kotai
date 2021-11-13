@@ -1,8 +1,9 @@
 
 from kotai.logconf import sep, src_sep
 
-runtimeInfoPlaceholder = '// [JOTAI-RUNTIME-INFO] //'
+indent = '    '
 
+runtimeInfoPlaceholder = '// [JOTAI-RUNTIME-INFO] //'
 
 GenBenchTemplatePrefix: str = (f'''{src_sep}\n'''
 '''
@@ -35,3 +36,28 @@ int usage() {
 {sep}
 {runtimeInfoPlaceholder}\n\n
 ''')
+
+GenBenchTemplateMainBegin: str = (
+    'int main(int argc, char *argv[]) {\n\n'
+)
+
+GenBenchTemplateMainEnd: str = (
+    f'\n{indent}return 0;\n'
+    '}\n'
+)
+
+GenBenchSwitchBegin: str = (
+    f'{indent}int opt = atoi(argv[1]);\n'
+    f'{indent}switch(opt) ''{\n\n'
+)
+GenBenchSwitchEnd: str = (
+    f'{indent}''}\n'
+)
+
+def genSwitch(idx: int, out: str, ketDesc: str = '') -> str:
+    return (
+        f"""{f'{indent}// {ketDesc}' if ketDesc else ''}\n"""
+        f'{indent}case {idx}:\n'
+        f'{indent*2}{out}\n'
+        f'{indent*2}break;\n'
+    )
