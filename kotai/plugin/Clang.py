@@ -38,6 +38,7 @@ class Clang():
         if self.optLevel == 'O0':
             proc_args = [
                 f'{Clang.exe["clang"]}',
+                '-fno-stack-protector',
                 '-g',
                 '-ggdb',
                 '-Xclang',
@@ -45,7 +46,6 @@ class Clang():
                 f'-O0',
                 '-std=c2x',
                 '-Wall',
-                '-fno-stack-protector',
                 '-no-pie',
                 '-o', f'{self.ofile}',
                 f'{self.ifile}',
@@ -54,6 +54,7 @@ class Clang():
             proc_args = [
                 f'{Clang.exe["clang"]}',
                 '-g',
+                '-fno-inline',
                 '-ggdb',
                 f'-{self.optLevel}',
                 '-std=c2x',

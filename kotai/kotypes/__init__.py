@@ -86,6 +86,8 @@ class ExitCode(Enum):
 
     @final
     def __bool__(self): return bool(self.value)
+    def __str__(self): return '[exit: success]' if self else '[exit: failure]'
+    def __repr__(self): return '[exit: success]' if self else '[exit: failure]'
 
     #@final
     #class __ExitCode_OK:
@@ -97,6 +99,7 @@ class ExitCode(Enum):
 
     OK:  Final  = True
     ERR: Final  = False
+
 
 # Aliases
 Success: TypeAlias = Literal[ExitCode.OK]
@@ -111,6 +114,20 @@ success: Final[Success] = ExitCode.OK
 failure: Final[Failure] = ExitCode.ERR
 '''Value representing failure'''
 
+class CaseBenchInfo:
+    __slots__ = (
+                 'switchNum',
+                 'content',
+                 )
+
+    def __init__ (self,
+                  switchNum: int,
+                  content: str,
+                 ) -> None:
+
+        self.switchNum: int = switchNum
+        self.content: str   = content
+
 class BenchInfo:
     __slots__ = (
                  'cFilePath',
@@ -118,36 +135,82 @@ class BenchInfo:
                  'ketList',
                  'optLevelList',
                  'exitCodes',
-                 'descriptor'
+                 'descriptor',
+                 'benchCases',
+                 'benchFunction',
+                 'auxFunction'
                  )
 
     def __init__(self,
                  cFilePath: Path,
-                 fnName: str = '',
-                 ketList: list[KonstrainExecType] = [],
-                 optLevelList: list[OptLevel] = [],
-                 exitCodes: dict[Any, ExitCode] = {},
-                 descriptor: str = '',
+                 fnName: str                                                    | None = None,
+                 ketList: list[KonstrainExecType]                               | None = None,
+                 optLevelList: list[OptLevel]                                   | None = None,
+                 exitCodes: dict[Any, ExitCode]                                 | None = None,
+                 descriptor: str                                                | None = None,
+                 benchCases: dict[Path, dict[Any, CaseBenchInfo]]               | None = None,
+                 benchFunction: str                                             | None = None,
+                 auxFunction: str                                               | None = None,
             ) -> None:
 
-        self.cFilePath: Path                  = cFilePath
-        self.fnName: str                      = fnName
-        self.ketList: list[KonstrainExecType] = ketList
-        self.optLevelList: list[OptLevel]     = optLevelList
-        self.exitCodes: dict[Any, ExitCode]   = exitCodes
-        self.descriptor: str                  = descriptor
+        self.cFilePath: Path = cFilePath
+        if _GUARD_fnName(fnName):               self.fnName = fnName
+        else: self.fnName = ''
 
-    #def __bool__(self): return bool(self.exitCode)
+        if _GUARD_ketList(ketList):             self.ketList = ketList
+        else: self.ketList = []
+
+        if _GUARD_optLevelList(optLevelList):   self.optLevelList = optLevelList
+        else: self.optLevelList = []
+
+        if _GUARD_exitCodes(exitCodes):         self.exitCodes = exitCodes
+        else: self.exitCodes = {}
+
+        if _GUARD_descriptor(descriptor):       self.descriptor = descriptor
+        else: self.descriptor = ''
+
+        if _GUARD_benchCases(benchCases):       self.benchCases = benchCases
+        else: self.benchCases = {}
+
+        if _GUARD_benchFunction(benchFunction): self.benchFunction = benchFunction
+        else: self.benchFunction = ''
+
+        if _GUARD_auxFunction(auxFunction):     self.auxFunction = auxFunction
+        else: self.auxFunction = ''
+
+
     def __bool__(self): return any(self.exitCodes.values())
 
     def setExitCodes(self, exitCodes: dict[Any, ExitCode]) -> None:
-        self.exitCodes = exitCodes
+        self.exitCodes |= exitCodes
 
-    def Err(self, key:Any, logmsg: str = '', level: LogLevel = 'debug'):
+    def setBenchCases(self, benchCases: dict[Path, dict[KonstrainExecType, CaseBenchInfo]]) -> None:
+        self.benchCases = benchCases
+
+    def Err(self, key: Any, logmsg: str = '', level: LogLevel = 'debug'):
         self.exitCodes = {key: failure}
         if logmsg: Log[level](logmsg)
         return self
 
+
+def _GUARD_fnName          (result: str | None)                                                 -> TypeGuard[str]                                                   : return result != None
+def _GUARD_ketList         (result: list[KonstrainExecType] | None)                             -> TypeGuard[list[KonstrainExecType]]                               : return result != None
+def _GUARD_optLevelList    (result: list[OptLevel] | None)                                      -> TypeGuard[list[OptLevel]]                                        : return result != None
+def _GUARD_exitCodes       (result: dict[Any, ExitCode] | None)                                 -> TypeGuard[dict[Any, ExitCode]]                                   : return result != None
+def _GUARD_descriptor      (result: str | None)                                                 -> TypeGuard[str]                                                   : return result != None
+def _GUARD_benchCases      (result: dict[Path, dict[Any, CaseBenchInfo]] | None)                -> TypeGuard[dict[Path, dict[Any, CaseBenchInfo]]]                  : return result != None
+def _GUARD_benchFunction   (result: str | None)                                                 -> TypeGuard[str]                                                   : return result != None
+def _GUARD_auxFunction     (result: str | None)                                                 -> TypeGuard[str]                                                   : return result != None
+'''
+fnName: str = None,
+ketList: list[KonstrainExecType] = None,
+optLevelList: list[OptLevel] = None,
+exitCodes: dict[Any, ExitCode] = None,
+descriptor: str = None,
+benchCases: dict[Path, dict[KonstrainExecType, CaseBenchInfo]] = None,
+benchFunction: str = None,
+auxFunction: str = None,
+'''
 
 # TypeGuard for BenchInfo
 def valid(result: BenchInfo | ExitCode) -> TypeGuard[BenchInfo] : return bool(result)
@@ -167,7 +230,7 @@ class CmdResult(NamedTuple):
 
 
 # When returning, if logging is desired, this allows `return logret(msg, ret)`
-def logret(msg: Any, ret: CmdResult = CmdResult('', ExitCode.ERR),
+def logret(msg: Any, ret: CmdResult = CmdResult(''),
            level: LogLevel = 'error') -> CmdResult:
     ''' Calls logging.<level> with msg and propagates ret'''
     Log[level](f'{msg}')
@@ -235,7 +298,7 @@ def runproc(proc_args: list[str], timeout: float,
     if out: logging.debug(f'{out=}')
     if err: logging.error(f'{err=}')
 
-    res = CmdResult(out, ExitCode.ERR if proc.returncode else ExitCode.OK)
+    res = CmdResult(out, failure if proc.returncode else success)
     return out2file(res, ofpath, breakLines) if ofpath else res
 
 

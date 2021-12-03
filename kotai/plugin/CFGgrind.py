@@ -4,7 +4,7 @@
 from pathlib import Path
 from shutil import which
 
-from kotai.kotypes import ExitCode, CmdResult, runproc
+from kotai.kotypes import CmdResult, runproc, failure
 
 # --------------------------------------------------------------------------- #
 
@@ -49,7 +49,7 @@ class CFGgrind:
         proc_args = [
             f'{CFGgrind.exe["cfggrind_asmmap"]}',
             f'{self.binPath}',
-        ] + [*args]
+        ]
         #print(f'cfgg_asmmap: {proc_args}')
         return runproc(proc_args, timeout, ofpath=self.mapFilePath)
 
@@ -66,6 +66,7 @@ class CFGgrind:
 
 
     def _run_valgrind(self, timeout: float, *args: str) -> CmdResult:
+        self.cfgOutFilePath = Path(str(self.cfgOutFilePath).replace('.cfg', f'_{args[0]}.cfg', 1))
         proc_args = [
             f'{CFGgrind.exe["valgrind"]}',
             '--tool=cfggrind',
@@ -78,28 +79,29 @@ class CFGgrind:
 
 
     def _run_cfggrind_info(self, timeout: float, *args: str) -> CmdResult:
+        self.cfggInfoOutPath = Path(str(self.cfggInfoOutPath).replace('.info', f'_{args[0]}.info', 1))
         proc_args = [
             f'{CFGgrind.exe["cfggrind_info"]}',
             '-f', f'{Path(self.binPath).name}::{self.benchFn}',
             '-s', 'functions',
             '-m', 'json',
             f'{self.cfgOutFilePath}'
-        ] + [*args]
+        ] 
         #print(f'cfgg_info: {proc_args}')
         return runproc(proc_args, timeout, ofpath=self.cfggInfoOutPath)
 
 
     def runcmd(self, *args: str) -> CmdResult:
         cfggMapRes = self._run_cfggrind_asmmap(CFGgrind.timeout, *args)
-        if cfggMapRes.err != ExitCode.OK:
+        if cfggMapRes.err == failure:
             return cfggMapRes
 
         valgrindMemcheckRes = self._run_valgrind_memcheck(CFGgrind.timeout, *args)
-        if valgrindMemcheckRes.err != ExitCode.OK:
+        if valgrindMemcheckRes.err == failure:
             return valgrindMemcheckRes
 
         valgrindRes = self._run_valgrind(CFGgrind.timeout, *args)
-        if valgrindRes.err != ExitCode.OK:
+        if valgrindRes.err == failure:
             return valgrindRes
 
         return self._run_cfggrind_info(CFGgrind.timeout, *args)

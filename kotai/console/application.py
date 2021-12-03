@@ -5,7 +5,8 @@ import argparse
 import logging
 from pathlib import Path
 from multiprocessing import Pool
-from typing import Any, Counter
+from typing import Any
+from pprint import pprint
 
 from kotai.constraints.genkonstrain import Konstrain
 from kotai.plugin.PrintDescriptors import PrintDescriptors
@@ -13,7 +14,7 @@ from kotai.plugin.Jotai import Jotai
 from kotai.plugin.Clang import Clang
 from kotai.plugin.CFGgrind import CFGgrind
 from kotai.templates.benchmark import GenBenchTemplatePrefix, GenBenchTemplateMainBegin, GenBenchTemplateMainEnd, genSwitch, GenBenchSwitchBegin, GenBenchSwitchEnd
-from kotai.kotypes import BenchInfo, Failure, ExitCode, LogThen, OptLevel, OptLevels, SysExitCode, KonstrainExecType, KonstrainExecTypes, setLog, success, failure, valid
+from kotai.kotypes import BenchInfo, CaseBenchInfo, Failure, ExitCode, LogThen, OptLevel, OptLevels, SysExitCode, KonstrainExecType, KonstrainExecTypes, setLog, success, failure, valid
 from kotai.logconf import logFmt, sep
 
 
@@ -64,7 +65,7 @@ class Application:
         cli.add_argument('-i', '--inputdir',  type=str, nargs='+', required=True)
         cli.add_argument('-j', '--nproc',     type=int, default=8)
         cli.add_argument('-J', '--chunksize', type=int, default=-1)
-        cli.add_argument('-K',         type=str, nargs='+', choices=KonstrainExecTypes, default='big-arr')
+        cli.add_argument('-K',         type=str, nargs='+', choices=KonstrainExecTypes, default='all')
         cli.add_argument('--optLevel', type=str, nargs='+', choices=OptLevels,          default='O0')
         cli.add_argument('-L', '--logfile', default='./output/jotai.log')
         cli.add_argument('-u', '--ubstats', default='./output/ubstats.txt')
@@ -176,6 +177,7 @@ def _genDescriptor(pArgs: BenchInfo) -> BenchInfo:
 
     # If the fnName isn't found, return before creating the file
     if (fnName := getFnName(msg)) == failure:
+        print('nao achou nome')
         return pArgs.Err('descriptor', f'{fnName=}')
 
     # Creates the output dir for the current cFile
@@ -244,17 +246,17 @@ def _runJotai(pArgs: BenchInfo) -> BenchInfo:
     # buffer += original benchmark function
     try:
         with open(cFilePath, 'r', encoding='utf-8') as cFileHandle:
-            genBuffer += cFileHandle.read()
+            pArgs.benchFunction = cFileHandle.read()
+            genBuffer += pArgs.benchFunction
             genBuffer += f'\n\n\n{sep}\n\n'
     except Exception as e:
         return pArgs.Err('Jotai', f'{e}')
 
     cFileMetaDir    = cFilePath.with_suffix('.d')
     descriptorPath  = cFileMetaDir / 'descriptor'
-    # decl vars
-    #parse(self.descriptor())
 
-
+    jotaiSwitchCase = ''
+    recFunction = ''
     genSwitchList: list[tuple[KonstrainExecType, str, ExitCode]] = []
     for ket in pArgs.ketList:
         if ket in pArgs.exitCodes and pArgs.exitCodes[ket] == failure:
@@ -263,68 +265,150 @@ def _runJotai(pArgs: BenchInfo) -> BenchInfo:
         constraintsPath = cFileMetaDir / f'constraint_{ket}'
 
         # Jotai's result
-        jotaiSwitchCase, err = Jotai(constraintsPath, descriptorPath).runcmd()
+        jotair, err = Jotai(constraintsPath, descriptorPath).runcmd()
 
         # If error: returns before creating the genbench file
         if err == failure:
             pArgs.setExitCodes({ket: failure})
             continue
 
+        #tratar erro
+        recFunction = ''
+        match jotair.split('/*RV_DELIM*/'):
+            case [recFunc, decl]:  
+                recFunction, jotaiSwitchCase = recFunc, decl
+            case [decl]:
+                jotaiSwitchCase = decl
+
         genSwitchList += [(ket, jotaiSwitchCase, err)]
+
 
     if not genSwitchList:
         return pArgs.Err('Jotai', 'Jotai: Complete failure')
+
+    if recFunction:
+        pArgs.auxFunction = recFunction
+        genBuffer += recFunction
+    genBuffer += GenBenchTemplateMainBegin
+    genBuffer += GenBenchSwitchBegin
+    for idx, sw in enumerate(genSwitchList):
+        ket, out, err = sw
+        genBuffer += genSwitch(idx, out, ket)
+        if cFilePath in pArgs.benchCases:
+            pArgs.benchCases[cFilePath][ket] = CaseBenchInfo(idx, out)
+        else:
+            ket: KonstrainExecType
+            cb = CaseBenchInfo(idx, out)
+            pArgs.benchCases |= {cFilePath: {ket: cb}}
+
+    genBuffer += GenBenchSwitchEnd
+    genBuffer += GenBenchTemplateMainEnd
+
     # Creates the genBench file and writes the buffer to it
     genBenchPath = cFileMetaDir / f'{cFilePath.stem}.c'
     try:
         with open(genBenchPath, 'w', encoding='utf-8') as genBenchFile:
-            # buffer += mainFn begin
-            genBuffer += GenBenchTemplateMainBegin
-            genBuffer += GenBenchSwitchBegin
-            for idx, sw in enumerate(genSwitchList):
-                ket, out, err = sw
-                genBuffer += genSwitch(idx, out, ket)
-            genBuffer += GenBenchSwitchEnd
-            genBuffer += GenBenchTemplateMainEnd
             try: genBenchFile.write(genBuffer)
             except Exception as e:
                 return pArgs.Err('Jotai', f'{e}')
-
     except Exception as e:
         return pArgs.Err('Jotai', f'{e}')
 
     return pArgs
 
 
-# def _compileGenBench(pArgs: BenchInfo) -> BenchInfo:
-#     cFilePath    = pArgs.cFilePath
-#     ketList      = pArgs.ketList
-#     optLevelList = pArgs.optLevelList
-#     cFileMetaDir = cFilePath.with_suffix('.d')
-#     # genBenchPath = cFileMetaDir / f'{cFilePath.stem}_{ket}.c'
-#     # genBinPath   = cFileMetaDir / f'{cFilePath.stem}_{ket}_{optLevel}'
+def _compileGenBench(pArgs: BenchInfo) -> BenchInfo:
+    cFilePath    = pArgs.cFilePath
+    optLevelList = pArgs.optLevelList
+    cFileMetaDir = cFilePath.with_suffix('.d')
+    genBenchPath = cFileMetaDir / f'{cFilePath.stem}.c'
+    
+    optResList: list[tuple[OptLevel, ExitCode]] = []
+    for opt in optLevelList:
+        genBinPath   = cFileMetaDir / f'{cFilePath.stem}_{opt}'
+        # Compiles the genBench into a binary
+        _, err = Clang(opt, ofile=genBinPath, ifile=genBenchPath).runcmd()
 
-#     for ket in ketList:
-#         for opt in optLevelList:
-#             # Compiles the genBench into a binary
-#             _, err = Clang(optLevel, ofile=genBinPath, ifile=genBenchPath).runcmd()
+        if err == failure:
+            pArgs.setExitCodes({opt: failure})
+            continue
+        optResList += [(opt, err), ]
 
-#     # return (pArgs if err != failure
-#     #         else pArgs.Err())
+    if not optResList:
+        return pArgs.Err('Clang', 'Clang: Complete failure')
+    return pArgs
 
 
 def _runCFGgrind(pArgs: BenchInfo) -> BenchInfo:
     cFilePath              = pArgs.cFilePath
-    ket                    = pArgs.ket
-    optLevel               = pArgs.optLevel
+    ketList                = pArgs.ketList
+    optLevelList           = pArgs.optLevelList
     cFileMetaDir           = cFilePath.with_suffix('.d')
-    genBinPath             = cFileMetaDir / f'{cFilePath.stem}_{ket}_{optLevel}'
+
+
     ''' Runs valgrind-memcheck, cfgg-asmmap, valgrind-cfgg and cfgg-info '''
+    runResList: list[tuple[str, OptLevel, KonstrainExecType, ExitCode]] = []
+    for opt in optLevelList:
+        if opt in pArgs.exitCodes and pArgs.exitCodes[opt] == failure:
+            continue
 
-    res, err = CFGgrind(genBinPath, pArgs.fnName).runcmd()
+        #if opt in pArgs.exitCodes:
+        genBinPath = cFileMetaDir / f'{cFilePath.stem}_{opt}'
+        for ket in ketList:
+            
+            if ket in pArgs.exitCodes and pArgs.exitCodes[ket] == failure:
+                continue
+            _, err = CFGgrind(genBinPath, pArgs.fnName).runcmd(str(pArgs.benchCases[cFilePath][ket].switchNum))
+            if err == failure:
+                pArgs.setExitCodes({ket: failure})
+                #pArgs.setBenchCasesError(cFilePath, ket)
+                continue
 
-    return (pArgs if err != failure
-            else pArgs.Err(f'CFGgrind:\n{res}\n'))
+            runResList += [(pArgs.fnName, opt, ket, err)]
+
+    if not runResList:
+        return pArgs.Err('Run', 'Run: Complete failure')
+    return pArgs
+
+def _createFinalBench(pArgs: BenchInfo) -> BenchInfo:
+
+    cFilePath = pArgs.cFilePath
+    cFileMetaDir    = cFilePath.with_suffix('.d')
+    # decl vars
+    #parse(self.descriptor())
+    genBuffer = GenBenchTemplatePrefix
+    genBuffer += pArgs.benchFunction
+    genBuffer += f'\n\n\n{sep}\n\n'
+    genBuffer += pArgs.auxFunction
+    genBuffer += f'\n\n\n{sep}\n\n'
+    genBuffer += GenBenchTemplateMainBegin
+    genBuffer += GenBenchSwitchBegin
+    newCaseNumber = 0
+
+
+    for ket in pArgs.ketList:
+        if ket in pArgs.exitCodes and pArgs.exitCodes[ket] == failure:
+            print (f'[error]: ({cFilePath.name=}) {ket=}\n')
+            continue
+
+        print (f'[success]: ({cFilePath.name=}) {ket=}\n')
+        genBuffer += genSwitch(newCaseNumber, pArgs.benchCases[cFilePath][ket].content, ket)
+        newCaseNumber += 1
+
+    genBuffer += GenBenchSwitchEnd
+    genBuffer += GenBenchTemplateMainEnd
+
+    # Creates the genBench file and writes the buffer to it
+    genBenchPath = cFileMetaDir / f'{cFilePath.stem}_Final.c'
+    try:
+        with open(genBenchPath, 'w', encoding='utf-8') as genBenchFile:
+            try: genBenchFile.write(genBuffer)
+            except Exception as e:
+                return pArgs.Err('JotaiFinal', f'{e}')
+    except Exception as e:
+        return pArgs.Err('JotaiFinal', f'{e}')
+    print("worked \n")
+    return pArgs
 
 
 def _start(self: Application, ) -> SysExitCode:
@@ -333,12 +417,12 @@ def _start(self: Application, ) -> SysExitCode:
     for benchDir in self.inputBenchmarks:
 
         #self.optLevelList
-        pArgs = [BenchInfo(cf, ketList=self.ketList, optLevelList=[]) for cf in benchDir.glob('*.c')]
+        pArgs = [BenchInfo(cf, ketList=self.ketList, optLevelList=self.optLevels) for cf in benchDir.glob('*.c')]
 
         # [-c] Deletes 
         if self.args.clean:
             with Pool(self.nproc) as pool:
-                pool.map(_cleanFn, pArgs, len(pArgs) // self.nproc // 2 + 1)
+                pool.imap_unordered(_cleanFn, pArgs, len(pArgs) // self.nproc // 2 + 1)
                 pool.close()
                 pool.join()
             return success
@@ -347,37 +431,41 @@ def _start(self: Application, ) -> SysExitCode:
         with Pool(self.nproc, maxtasksperchild=self.mtpc) as pool:
 
             # benchDir/descriptor <- PrintDescriptors
-            resGenDesc = [r for r in pool.map(_genDescriptor, pArgs, self.chunksize) if valid(r)]
+            resGenDesc = [r for r in pool.imap_unordered(_genDescriptor, pArgs, self.chunksize) if valid(r)]
             if not resGenDesc:
                 return '[PrintDescriptors] No descriptors were generated'
 
             # benchDir/constraints <- Konstrain
-            resKons = [r for r in pool.map(_runKonstrain, resGenDesc, self.chunksize) if valid(r)]
+            resKons = [r for r in pool.imap_unordered(_runKonstrain, resGenDesc, self.chunksize) if valid(r)]
             if not resKons:
                 return '[Konstrain] No constraints were generated'
 
-            # >>> We're 
-            # pollyInput = [BenchInfo(bi.cFilePath, bi.fnName)
-            #               for bi in resGenDesc]
-            # resPolly = [r for r in pool.map(_runPolly, resKons, self.chunksize) if valid(r)]
-
             # benchDir/genBench.c <- Jotai
-            resJotai = [r for r in pool.map(_runJotai, resKons, self.chunksize) if valid(r)]
+            resJotai = [r for r in pool.imap_unordered(_runJotai, resKons, self.chunksize) if valid(r)]
             if not resJotai:
                 return '[Jotai] No benchmarks with entry points were generated'
 
-            # clangInput = [BenchInfo(bi.cFilePath, bi.fnName, bi.ket, optLevel)
-            #               for bi in resJotai for optLevel in self.optLevels]
+            clangInput = resJotai
 
             # # benchDir/genBench <- clang
-            # resClang = [r for r in pool.map(_compileGenBench, clangInput, self.chunksize) if valid(r)]
+            resClang = [r for r in pool.imap_unordered(_compileGenBench, clangInput, self.chunksize) if valid(r)]
 
-            # if not resClang:
-            #     return '[Clang] No benchmarks with entry points compiled successfully'
+            if not resClang:
+                return '[Clang] No benchmarks with entry points compiled successfully'
 
-            # resValgrind = [r for r in pool.map(_runCFGgrind, resClang, self.chunksize)]
-            # if not resValgrind:
-            #     return '[Valgrind/CFGgrind] No binary executed successfully'
+            resValgrind = [r for r in pool.imap_unordered(_runCFGgrind, resClang, self.chunksize) if valid(r)]
+            if not resValgrind:
+                return '[Valgrind/CFGgrind] No binary executed successfully'
+
+            print(sep)
+            print('resValgrind:')
+            pprint(resValgrind)
+            print(sep)
+            resFinal = [r for r in pool.imap_unordered(_createFinalBench, resValgrind, self.chunksize) if valid(r)]
+            if not resFinal:
+                return '[Final benchmark] No file created'
+
+            print(len(resFinal))
 
             pool.close()
             pool.join()

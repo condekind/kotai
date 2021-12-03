@@ -58,6 +58,8 @@ def genSwitch(idx: int, out: str, ketDesc: str = '') -> str:
     return (
         f"""{f'{indent}// {ketDesc}' if ketDesc else ''}\n"""
         f'{indent}case {idx}:\n'
+        f'{indent}''{\n'
         f'{indent*2}{out}\n'
         f'{indent*2}break;\n'
+        f'{indent}''}\n'
     )
