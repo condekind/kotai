@@ -13,7 +13,7 @@ from kotai.plugin.PrintDescriptors import PrintDescriptors
 from kotai.plugin.Jotai import Jotai
 from kotai.plugin.Clang import Clang
 from kotai.plugin.CFGgrind import CFGgrind
-from kotai.templates.benchmark import GenBenchTemplatePrefix, GenBenchTemplateMainBegin, GenBenchTemplateMainEnd, genSwitch, GenBenchSwitchBegin, GenBenchSwitchEnd
+from kotai.templates.benchmark import GenBenchTemplatePrefix, GenBenchTemplateMainBegin, GenBenchTemplateMainEnd, genSwitch, GenBenchSwitchBegin, GenBenchSwitchEnd, usage
 from kotai.kotypes import BenchInfo, CaseBenchInfo, Failure, ExitCode, LogThen, OptLevel, OptLevels, SysExitCode, KonstrainExecType, KonstrainExecTypes, setLog, success, failure, valid
 from kotai.logconf import logFmt, sep
 
@@ -88,7 +88,7 @@ class Application:
             self.ketList = KonstrainExecTypes
         else:
             self.ketList = (kets if (kets := [ket for ket in self.args.K if ket in KonstrainExecTypes])
-                              else ['big-arr'])
+                              else ['all'])
 
         # [--optLevel]
         if 'all' in self.args.optLevel:
@@ -177,7 +177,6 @@ def _genDescriptor(pArgs: BenchInfo) -> BenchInfo:
 
     # If the fnName isn't found, return before creating the file
     if (fnName := getFnName(msg)) == failure:
-        print('nao achou nome')
         return pArgs.Err('descriptor', f'{fnName=}')
 
     # Creates the output dir for the current cFile
@@ -242,6 +241,7 @@ def _runJotai(pArgs: BenchInfo) -> BenchInfo:
 
     # buffer <- includes, defines, typedefs and runtime info placeholder
     genBuffer = GenBenchTemplatePrefix
+    genBuffer += usage(len(pArgs.ketList)-1)
 
     # buffer += original benchmark function
     try:
@@ -376,15 +376,8 @@ def _createFinalBench(pArgs: BenchInfo) -> BenchInfo:
     cFileMetaDir    = cFilePath.with_suffix('.d')
     # decl vars
     #parse(self.descriptor())
-    genBuffer = GenBenchTemplatePrefix
-    genBuffer += pArgs.benchFunction
-    genBuffer += f'\n\n\n{sep}\n\n'
-    genBuffer += pArgs.auxFunction
-    genBuffer += f'\n\n\n{sep}\n\n'
-    genBuffer += GenBenchTemplateMainBegin
-    genBuffer += GenBenchSwitchBegin
     newCaseNumber = 0
-
+    switchBuffer = ""
 
     for ket in pArgs.ketList:
         if ket in pArgs.exitCodes and pArgs.exitCodes[ket] == failure:
@@ -392,9 +385,18 @@ def _createFinalBench(pArgs: BenchInfo) -> BenchInfo:
             continue
 
         print (f'[success]: ({cFilePath.name=}) {ket=}\n')
-        genBuffer += genSwitch(newCaseNumber, pArgs.benchCases[cFilePath][ket].content, ket)
+        switchBuffer += genSwitch(newCaseNumber, pArgs.benchCases[cFilePath][ket].content, ket)
         newCaseNumber += 1
 
+    genBuffer = GenBenchTemplatePrefix
+    genBuffer += usage(newCaseNumber-1)
+    genBuffer += pArgs.benchFunction
+    genBuffer += f'\n\n\n{sep}\n\n'
+    genBuffer += pArgs.auxFunction
+    genBuffer += f'\n\n\n{sep}\n\n'
+    genBuffer += GenBenchTemplateMainBegin
+    genBuffer += GenBenchSwitchBegin
+    genBuffer += switchBuffer
     genBuffer += GenBenchSwitchEnd
     genBuffer += GenBenchTemplateMainEnd
 
