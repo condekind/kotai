@@ -13,7 +13,7 @@ from kotai.plugin.PrintDescriptors import PrintDescriptors
 from kotai.plugin.Jotai import Jotai
 from kotai.plugin.Clang import Clang
 from kotai.plugin.CFGgrind import CFGgrind
-from kotai.templates.benchmark import GenBenchTemplatePrefix, GenBenchTemplateMainBegin, GenBenchTemplateMainEnd, genSwitch, GenBenchSwitchBegin, GenBenchSwitchEnd, usage
+from kotai.templates.benchmark import GenBenchTemplatePrefix, randGenerator, GenBenchTemplateMainBegin, GenBenchTemplateMainEnd, genSwitch, GenBenchSwitchBegin, GenBenchSwitchEnd, usage
 from kotai.kotypes import BenchInfo, CaseBenchInfo, Failure, ExitCode, LogThen, OptLevel, OptLevels, SysExitCode, KonstrainExecType, KonstrainExecTypes, setLog, success, failure, valid
 from kotai.logconf import logFmt, sep
 
@@ -241,6 +241,7 @@ def _runJotai(pArgs: BenchInfo) -> BenchInfo:
 
     # buffer <- includes, defines, typedefs and runtime info placeholder
     genBuffer = GenBenchTemplatePrefix
+    genBuffer += randGenerator
     genBuffer += usage(len(pArgs.ketList)-1)
 
     # buffer += original benchmark function
@@ -389,6 +390,7 @@ def _createFinalBench(pArgs: BenchInfo) -> BenchInfo:
         newCaseNumber += 1
 
     genBuffer = GenBenchTemplatePrefix
+    genBuffer += randGenerator
     genBuffer += usage(newCaseNumber-1)
     genBuffer += pArgs.benchFunction
     genBuffer += f'\n\n\n{sep}\n\n'

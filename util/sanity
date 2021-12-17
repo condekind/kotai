@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/zsh
 # =========================================================================== #
 #
 # Compilation pipeline sanity test
@@ -28,24 +28,52 @@ esac
 
 src=$1
 opt=$2
+std=c11
 fnName=$3
 argv=$4
-binName="${src%.*}"
+binName="${src%.*}_sanity_O${opt}"
 
 # --------------------------------------------------------------------------- #
 
+# Generate assembly
+clang -Xclang -disable-O0-optnone       \
+      -fno-inline                       \
+      -g                                \
+      -ggdb                             \
+      -O"$opt"                          \
+      -std=$std                         \
+      -Wall                             \
+      -fno-stack-protector              \
+      -no-pie                           \
+      -S                                \
+      -o "${binName}.s"                 \
+      "$src" 2>/dev/null
+
+# Generate LLVM IR
+clang -Xclang -disable-O0-optnone       \
+      -fno-inline                       \
+      -g                                \
+      -ggdb                             \
+      -O"$opt"                          \
+      -std=$std                         \
+      -Wall                             \
+      -fno-stack-protector              \
+      -no-pie                           \
+      -S -emit-llvm                     \
+      -o "${binName}.ll"                \
+      "$src" 2>/dev/null
 
 # compile
-clang -Xclang -disable-O0-optnone   \
-      -fno-inline                   \
-      -g                            \
-      -ggdb                         \
-      -O"$opt"                      \
-      -std=c2x                      \
-      -Wall                         \
-      -fno-stack-protector          \
-      -no-pie                       \
-      -o "$binName"                 \
+clang -Xclang -disable-O0-optnone       \
+      -fno-inline                       \
+      -g                                \
+      -ggdb                             \
+      -O"$opt"                          \
+      -std=$std                         \
+      -Wall                             \
+      -fno-stack-protector              \
+      -no-pie                           \
+      -o "${binName}"                   \
       "$src"
 
 if [ $? -ne 0 ]; then
@@ -57,6 +85,7 @@ printf "\n"
 # --------------------------------------------------------------------------- #
 
 # map
+print -lr "cfggrind_asmmap $binName > $binName.map"
 cfggrind_asmmap $binName > $binName.map
 
 if [ $? -ne 0 ]; then
