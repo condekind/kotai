@@ -1,4 +1,4 @@
-
+from kotai.kotypes import KonstrainExecType
 from kotai.logconf import sep, src_sep
 
 indent = '    '
@@ -32,15 +32,15 @@ float next_f() {
 } \n\n'''
 
 
-def usage(numCases:int):
+def usage(usageCases:list[tuple[int, KonstrainExecType]]):
     return (f'''
 // Usage menu
 int usage() {{
     fprintf(stderr, "Usage:\\n\\
     prog [OPTIONS] [ARGS]\\n\\
 \\nARGS:\\n\\
-    case_number     integer: 0 <= n <= {numCases}\\n\\
-\\nOPTIONS:\\n\\
+{f''.join([f'    {idx:>4}            {line}{chr(92)}n{chr(92)}{chr(10)}' for idx, line in usageCases])}\\n\\
+    OPTIONS:\\n\\
     -t              (NOT IMPLEMENTED YET) enable time measurement\\n\\n\\
 ");
 

@@ -242,14 +242,12 @@ def _runJotai(pArgs: BenchInfo) -> BenchInfo:
     # buffer <- includes, defines, typedefs and runtime info placeholder
     genBuffer = GenBenchTemplatePrefix
     genBuffer += randGenerator
-    genBuffer += usage(len(pArgs.ketList)-1)
+
 
     # buffer += original benchmark function
     try:
         with open(cFilePath, 'r', encoding='utf-8') as cFileHandle:
             pArgs.benchFunction = cFileHandle.read()
-            genBuffer += pArgs.benchFunction
-            genBuffer += f'\n\n\n{sep}\n\n'
     except Exception as e:
         return pArgs.Err('Jotai', f'{e}')
 
@@ -258,8 +256,10 @@ def _runJotai(pArgs: BenchInfo) -> BenchInfo:
 
     jotaiSwitchCase = ''
     recFunction = ''
-    genSwitchList: list[tuple[KonstrainExecType, str, ExitCode]] = []
-    for ket in pArgs.ketList:
+    genSwitchList: list[tuple[int, KonstrainExecType, str, ExitCode]] = []
+    usageCases: list[tuple[int, KonstrainExecType]] = []
+
+    for idx, ket in enumerate(pArgs.ketList):
         if ket in pArgs.exitCodes and pArgs.exitCodes[ket] == failure:
             continue
 
@@ -281,7 +281,12 @@ def _runJotai(pArgs: BenchInfo) -> BenchInfo:
             case [decl]:
                 jotaiSwitchCase = decl
 
-        genSwitchList += [(ket, jotaiSwitchCase, err)]
+        genSwitchList += [(idx, ket, jotaiSwitchCase, err)]
+        usageCases += [(idx, ket)]
+
+    genBuffer += usage(usageCases)
+    genBuffer += pArgs.benchFunction
+    genBuffer += f'\n\n\n{sep}\n\n'
 
 
     if not genSwitchList:
@@ -292,8 +297,8 @@ def _runJotai(pArgs: BenchInfo) -> BenchInfo:
         genBuffer += recFunction
     genBuffer += GenBenchTemplateMainBegin
     genBuffer += GenBenchSwitchBegin
-    for idx, sw in enumerate(genSwitchList):
-        ket, out, err = sw
+    for sw in genSwitchList:
+        idx, ket, out, err = sw
         genBuffer += genSwitch(idx, out, ket)
         if cFilePath in pArgs.benchCases:
             pArgs.benchCases[cFilePath][ket] = CaseBenchInfo(idx, out)
@@ -377,21 +382,25 @@ def _createFinalBench(pArgs: BenchInfo) -> BenchInfo:
     cFileMetaDir    = cFilePath.with_suffix('.d')
     # decl vars
     #parse(self.descriptor())
-    newCaseNumber = 0
+    #newCaseNumber = 0
     switchBuffer = ""
+    usageCases: list[tuple[int, KonstrainExecType]] = []
 
     for ket in pArgs.ketList:
         if ket in pArgs.exitCodes and pArgs.exitCodes[ket] == failure:
             print (f'[error]: ({cFilePath.name=}) {ket=}\n')
             continue
 
+        usageCases += [(pArgs.benchCases[cFilePath][ket].switchNum , ket)]
         print (f'[success]: ({cFilePath.name=}) {ket=}\n')
-        switchBuffer += genSwitch(newCaseNumber, pArgs.benchCases[cFilePath][ket].content, ket)
-        newCaseNumber += 1
+        #switchBuffer += genSwitch(newCaseNumber, pArgs.benchCases[cFilePath][ket].content, ket)
+        switchBuffer += genSwitch(pArgs.benchCases[cFilePath][ket].switchNum , pArgs.benchCases[cFilePath][ket].content, ket)
+
+        #newCaseNumber += 1
 
     genBuffer = GenBenchTemplatePrefix
     genBuffer += randGenerator
-    genBuffer += usage(newCaseNumber-1)
+    genBuffer += usage(usageCases)
     genBuffer += pArgs.benchFunction
     genBuffer += f'\n\n\n{sep}\n\n'
     genBuffer += pArgs.auxFunction

@@ -38,6 +38,7 @@ class Clang():
         if self.optLevel == 'O0':
             proc_args = [
                 f'{Clang.exe["clang"]}',
+
                 '-g',
                 '-ggdb',
                 '-Xclang',
