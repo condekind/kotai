@@ -138,7 +138,8 @@ class BenchInfo:
                  'descriptor',
                  'benchCases',
                  'benchFunction',
-                 'auxFunction'
+                 'auxFunction',
+                 'caseStdout',
                  )
 
     def __init__(self,
@@ -151,6 +152,7 @@ class BenchInfo:
                  benchCases: dict[Path, dict[Any, CaseBenchInfo]]               | None = None,
                  benchFunction: str                                             | None = None,
                  auxFunction: str                                               | None = None,
+                 caseStdout: dict[KonstrainExecType, str]                       | None = None,
             ) -> None:
 
         self.cFilePath: Path = cFilePath
@@ -178,6 +180,9 @@ class BenchInfo:
         if _GUARD_auxFunction(auxFunction):     self.auxFunction = auxFunction
         else: self.auxFunction = ''
 
+        if _GUARD_caseStdout(caseStdout):      self.caseStdout = caseStdout
+        else: self.caseStdout = {}
+
 
     def __bool__(self): return any(self.exitCodes.values())
 
@@ -192,6 +197,9 @@ class BenchInfo:
         if logmsg: Log[level](logmsg)
         return self
 
+    def setCaseStdout(self, caseStdout: dict[KonstrainExecType, str]) -> None:
+        self.caseStdout |= caseStdout
+
 
 def _GUARD_fnName          (result: str | None)                                                 -> TypeGuard[str]                                                   : return result != None
 def _GUARD_ketList         (result: list[KonstrainExecType] | None)                             -> TypeGuard[list[KonstrainExecType]]                               : return result != None
@@ -201,6 +209,7 @@ def _GUARD_descriptor      (result: str | None)                                 
 def _GUARD_benchCases      (result: dict[Path, dict[Any, CaseBenchInfo]] | None)                -> TypeGuard[dict[Path, dict[Any, CaseBenchInfo]]]                  : return result != None
 def _GUARD_benchFunction   (result: str | None)                                                 -> TypeGuard[str]                                                   : return result != None
 def _GUARD_auxFunction     (result: str | None)                                                 -> TypeGuard[str]                                                   : return result != None
+def _GUARD_caseStdout      (result: dict[KonstrainExecType, str] | None)                        -> TypeGuard[dict[KonstrainExecType, str]]                          : return result != None
 '''
 fnName: str = None,
 ketList: list[KonstrainExecType] = None,
@@ -295,6 +304,7 @@ def runproc(proc_args: list[str], timeout: float,
 
     proc.kill()  # After this point, proc.returncode can't be None
     out, err = proc.communicate()  # Results
+
     if out: logging.debug(f'{out=}')
     if err: logging.error(f'{err=}')
 

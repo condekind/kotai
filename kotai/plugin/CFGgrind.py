@@ -104,7 +104,11 @@ class CFGgrind:
         if valgrindRes.err == failure:
             return valgrindRes
 
-        return self._run_cfggrind_info(CFGgrind.timeout, *args)
+        cfggrindRes = self._run_cfggrind_info(CFGgrind.timeout, *args)
+        if cfggrindRes.err == failure:
+            return cfggrindRes
+
+        return valgrindRes
 
 
 

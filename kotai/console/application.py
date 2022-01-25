@@ -3,10 +3,12 @@
 
 import argparse
 import logging
+import csv
 from pathlib import Path
 from multiprocessing import Pool
 from typing import Any
 from pprint import pprint
+
 
 from kotai.constraints.genkonstrain import Konstrain
 from kotai.plugin.PrintDescriptors import PrintDescriptors
@@ -351,7 +353,7 @@ def _runCFGgrind(pArgs: BenchInfo) -> BenchInfo:
     optLevelList           = pArgs.optLevelList
     cFileMetaDir           = cFilePath.with_suffix('.d')
 
-
+    caseStdout: dict[KonstrainExecType, str] = {}
     ''' Runs valgrind-memcheck, cfgg-asmmap, valgrind-cfgg and cfgg-info '''
     runResList: list[tuple[str, OptLevel, KonstrainExecType, ExitCode]] = []
     for opt in optLevelList:
@@ -364,16 +366,22 @@ def _runCFGgrind(pArgs: BenchInfo) -> BenchInfo:
             
             if ket in pArgs.exitCodes and pArgs.exitCodes[ket] == failure:
                 continue
-            _, err = CFGgrind(genBinPath, pArgs.fnName).runcmd(str(pArgs.benchCases[cFilePath][ket].switchNum))
+            result, err = CFGgrind(genBinPath, pArgs.fnName).runcmd(str(pArgs.benchCases[cFilePath][ket].switchNum))
             if err == failure:
                 pArgs.setExitCodes({ket: failure})
                 #pArgs.setBenchCasesError(cFilePath, ket)
                 continue
+            print(result)
+            if ket not in caseStdout:
+                if result and '{{struct}}' not in result:
+                    caseStdout[ket] = result
+            
 
             runResList += [(pArgs.fnName, opt, ket, err)]
 
     if not runResList:
         return pArgs.Err('Run', 'Run: Complete failure')
+    pArgs.setCaseStdout(caseStdout)
     return pArgs
 
 def _createFinalBench(pArgs: BenchInfo) -> BenchInfo:
@@ -469,6 +477,22 @@ def _start(self: Application, ) -> SysExitCode:
             resValgrind = [r for r in pool.imap_unordered(_runCFGgrind, resClang, self.chunksize) if valid(r)]
             if not resValgrind:
                 return '[Valgrind/CFGgrind] No binary executed successfully'
+
+            with open('output/caseStdout.csv', 'w', encoding='utf-8') as caseStdoutFile:
+                nameAndCases = ['filename'] + self.ketList
+                caseWriter = csv.DictWriter(caseStdoutFile, fieldnames=nameAndCases)
+                records = []
+                for r in resValgrind:
+                    records += [{
+                        'filename': str(r.cFilePath)
+                    } | {
+                        ket:
+                        r.caseStdout[ket] if ket in r.caseStdout else 'NA'
+                        for ket in self.ketList
+                    }]
+                    # {k: v, c for item in ketList: pArgs.caseStdout[c]}
+                caseWriter.writeheader()
+                caseWriter.writerows(records)
 
             print(sep)
             print('resValgrind:')
