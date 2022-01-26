@@ -373,7 +373,7 @@ def _runCFGgrind(pArgs: BenchInfo) -> BenchInfo:
                 continue
             print(result)
             if ket not in caseStdout:
-                if result and '{{struct}}' not in result:
+                if result and '{{struct}}' not in result and '{{other_type}}' not in result:
                     caseStdout[ket] = result
             
 
