@@ -110,6 +110,16 @@ class CFGgrind:
 
         return valgrindRes
 
+    def _run_sanitize(self, timeout: float, *args: str) -> CmdResult:
+        proc_args = [
+            f'{self.binPath}',
+        ] + [*args]  
+        return runproc(proc_args, timeout)
+    
+
+    def runcmdFsanitize(self, *args: str) -> CmdResult:
+        sanitize = self._run_sanitize(CFGgrind.timeout, *args)
+        return sanitize
 
 
 # =========================================================================== #

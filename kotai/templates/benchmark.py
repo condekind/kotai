@@ -35,7 +35,7 @@ float next_f() {
 def usage(usageCases:list[tuple[int, KonstrainExecType]]):
     return (f'''
 // Usage menu
-int usage() {{
+void usage() {{
     fprintf(stderr, "Usage:\\n\\
     prog [OPTIONS] [ARGS]\\n\\
 \\nARGS:\\n\\

@@ -41,6 +41,7 @@ class Clang():
 
                 '-g',
                 '-ggdb',
+                '-fno-omit-frame-pointer',
                 '-Xclang',
                 '-disable-O0-optnone',
                 f'-O0',
@@ -55,6 +56,7 @@ class Clang():
             proc_args = [
                 f'{Clang.exe["clang"]}',
                 '-g',
+                '-fno-omit-frame-pointer',
                 '-fno-inline',
                 '-ggdb',
                 f'-{self.optLevel}',
@@ -67,6 +69,43 @@ class Clang():
             ]
         return runproc(proc_args, Clang.timeout)
 
+    def runcmdFsanitize(self) -> CmdResult:
+        if self.optLevel == 'O0':
+            proc_args = [
+                f'{Clang.exe["clang"]}',
 
+                '-g',
+                '-ggdb',
+                '-fsanitize=address,undefined,signed-integer-overflow',
+                '-fno-sanitize-recover=all',
+                '-fno-omit-frame-pointer',
+                '-Xclang',
+                '-disable-O0-optnone',
+                f'-O0',
+                '-std=c11',
+                '-Wall',
+                '-fno-stack-protector',
+                '-no-pie',
+                '-o', f'{self.ofile}',
+                f'{self.ifile}',
+            ]
+        else:
+            proc_args = [
+                f'{Clang.exe["clang"]}',
+                '-g',
+                '-fsanitize=address,undefined,signed-integer-overflow',
+                '-fno-sanitize-recover=all',
+                '-fno-omit-frame-pointer',
+                '-fno-inline',
+                '-ggdb',
+                f'-{self.optLevel}',
+                '-std=c11',
+                '-Wall',
+                '-fno-stack-protector',
+                '-no-pie',
+                '-o', f'{self.ofile}',
+                f'{self.ifile}',
+            ]
+        return runproc(proc_args, Clang.timeout)
 
 # =========================================================================== #

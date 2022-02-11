@@ -268,7 +268,7 @@ def _runJotai(pArgs: BenchInfo) -> BenchInfo:
         constraintsPath = cFileMetaDir / f'constraint_{ket}'
 
         # Jotai's result
-        jotair, err = Jotai(constraintsPath, descriptorPath).runcmd()
+        jotaiResult, err = Jotai(constraintsPath, descriptorPath).runcmd()
 
         # If error: returns before creating the genbench file
         if err == failure:
@@ -277,7 +277,7 @@ def _runJotai(pArgs: BenchInfo) -> BenchInfo:
 
         #tratar erro
         recFunction = ''
-        match jotair.split('/*RV_DELIM*/'):
+        match jotaiResult.split('/*RV_DELIM*/'):
             case [recFunc, decl]:  
                 recFunction, jotaiSwitchCase = recFunc, decl
             case [decl]:
@@ -324,6 +324,55 @@ def _runJotai(pArgs: BenchInfo) -> BenchInfo:
 
     return pArgs
 
+def _compileGenBenchFsanitize(pArgs: BenchInfo) -> BenchInfo:
+    cFilePath    = pArgs.cFilePath
+    optLevelList = pArgs.optLevelList
+    cFileMetaDir = cFilePath.with_suffix('.d')
+    genBenchPath = cFileMetaDir / f'{cFilePath.stem}.c'
+    
+    optResList: list[tuple[OptLevel, ExitCode]] = []
+    for opt in optLevelList:
+        genBinPath   = cFileMetaDir / f'{cFilePath.stem}_fsanitize_{opt}'
+        # Compiles the genBench into a binary
+        _, err = Clang(opt, ofile=genBinPath, ifile=genBenchPath).runcmdFsanitize()
+
+        if err == failure:
+            pArgs.setExitCodes({opt: failure})
+            continue
+        optResList += [(opt, err), ]
+
+    if not optResList:
+        return pArgs.Err('Clang', 'Clang: Fsanitize Complete failure')
+    return pArgs
+
+def _runWithFsanitize(pArgs: BenchInfo) -> BenchInfo:
+    cFilePath              = pArgs.cFilePath
+    ketList                = pArgs.ketList
+    optLevelList           = pArgs.optLevelList
+    cFileMetaDir           = cFilePath.with_suffix('.d')
+
+    ''' Runs binary compiled with Fsanitize'''
+    runResList: list[tuple[str, OptLevel, KonstrainExecType, ExitCode]] = []
+    for opt in optLevelList:
+        if opt in pArgs.exitCodes and pArgs.exitCodes[opt] == failure:
+            continue
+
+        #if opt in pArgs.exitCodes:
+        genBinPath = cFileMetaDir / f'{cFilePath.stem}_fsanitize_{opt}'
+        for ket in ketList:
+            
+            if ket in pArgs.exitCodes and pArgs.exitCodes[ket] == failure:
+                continue
+            result, err = CFGgrind(genBinPath, pArgs.fnName).runcmdFsanitize(str(pArgs.benchCases[cFilePath][ket].switchNum))
+            if err == failure:
+                pArgs.setExitCodes({ket: failure})
+                continue
+
+            runResList += [(pArgs.fnName, opt, ket, err)]
+
+    if not runResList:
+        return pArgs.Err('Run', 'Run: Fsanitize Complete failure')
+    return pArgs
 
 def _compileGenBench(pArgs: BenchInfo) -> BenchInfo:
     cFilePath    = pArgs.cFilePath
@@ -372,9 +421,11 @@ def _runCFGgrind(pArgs: BenchInfo) -> BenchInfo:
                 #pArgs.setBenchCasesError(cFilePath, ket)
                 continue
             print(result)
+            result = result.rstrip()
             if ket not in caseStdout:
+                # print only primitive types
                 if result and '{{struct}}' not in result and '{{other_type}}' not in result:
-                    caseStdout[ket] = result
+                    caseStdout[ket+opt] = result
             
 
             runResList += [(pArgs.fnName, opt, ket, err)]
@@ -469,7 +520,17 @@ def _start(self: Application, ) -> SysExitCode:
             clangInput = resJotai
 
             # # benchDir/genBench <- clang
-            resClang = [r for r in pool.imap_unordered(_compileGenBench, clangInput, self.chunksize) if valid(r)]
+
+
+            resClangFsanitize = [r for r in pool.imap_unordered(_compileGenBenchFsanitize, clangInput, self.chunksize) if valid(r)]
+            if not resClangFsanitize:
+                return '[Clang] No benchmarks with entry points compiled successfully with Fsanitize' 
+
+            resFsanitize = [r for r in pool.imap_unordered(_runWithFsanitize, resClangFsanitize, self.chunksize) if valid(r)]
+            if not resFsanitize:
+                return '[runFsanitize] No binary executed successfully'
+
+            resClang = [r for r in pool.imap_unordered(_compileGenBench, resFsanitize, self.chunksize) if valid(r)]
 
             if not resClang:
                 return '[Clang] No benchmarks with entry points compiled successfully'
@@ -479,18 +540,18 @@ def _start(self: Application, ) -> SysExitCode:
                 return '[Valgrind/CFGgrind] No binary executed successfully'
 
             with open('output/caseStdout.csv', 'w', encoding='utf-8') as caseStdoutFile:
-                nameAndCases = ['filename'] + self.ketList
+                nameAndCases = ['filename'] + [ket+opt for ket in self.ketList for opt in self.optLevels]
                 caseWriter = csv.DictWriter(caseStdoutFile, fieldnames=nameAndCases)
                 records = []
                 for r in resValgrind:
                     records += [{
                         'filename': str(r.cFilePath)
                     } | {
-                        ket:
-                        r.caseStdout[ket] if ket in r.caseStdout else 'NA'
-                        for ket in self.ketList
+                        ket+opt:
+                        r.caseStdout[ket+opt] if ket+opt in r.caseStdout else 'NA'
+                        for ket in self.ketList for opt in self.optLevels
                     }]
-                    # {k: v, c for item in ketList: pArgs.caseStdout[c]}
+
                 caseWriter.writeheader()
                 caseWriter.writerows(records)
 

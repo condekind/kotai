@@ -308,7 +308,11 @@ def runproc(proc_args: list[str], timeout: float,
     if out: logging.debug(f'{out=}')
     if err: logging.error(f'{err=}')
 
-    res = CmdResult(out, failure if proc.returncode else success)
+    res = CmdResult(
+        out,
+        failure if proc.returncode else success
+    )
+
     return out2file(res, ofpath, breakLines) if ofpath else res
 
 

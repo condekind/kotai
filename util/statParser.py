@@ -38,16 +38,18 @@ patterns = {}
 patterns['case0_O0'] = '*.d/*_O0_0.info'
 patterns['case0_O1'] = '*.d/*_O1_0.info'
 patterns['case0_Oz'] = '*.d/*_Oz_0.info'
+patterns['case0_O2'] = '*.d/*_Oz_0.info'
 
 #case 1: big arr
-patterns['case1_O0'] = '*.d/*_O0_1.info'
-patterns['case1_O1'] = '*.d/*_O1_1.info'
-patterns['case1_Oz'] = '*.d/*_Oz_1.info'
+# patterns['case1_O0'] = '*.d/*_O0_1.info'
+# patterns['case1_O1'] = '*.d/*_O1_1.info'
+# patterns['case1_O2'] = '*.d/*_O2_1.info'
+# patterns['case1_Oz'] = '*.d/*_Oz_1.info'
 
 #case 2: big arr 10x
-patterns['case2_O0'] = '*.d/*_O0_2.info'
-patterns['case2_O1'] = '*.d/*_O1_2.info'
-patterns['case2_Oz'] = '*.d/*_Oz_2.info'
+# patterns['case2_O0'] = '*.d/*_O0_2.info'
+# patterns['case2_O1'] = '*.d/*_O1_2.info'
+# patterns['case2_Oz'] = '*.d/*_Oz_2.info'
 
 print(f'Globbing files from directory\n\n{benchmarkDir}\n\nwith group -> pattern:\n')
 _ = [print(f'{group}    ->    {pat}') for group, pat in patterns.items()]
@@ -218,7 +220,7 @@ for group in patterns.keys():
 
 print(cnt)
 
-
+# MUDAR DE ACORDO COM O NUM DE CONSTRAINTS UTILIZADOS
 # ### Merge case 0 - int bounds
 
 # In[ ]:
@@ -233,9 +235,13 @@ info0_O1.columns = ['filename','staticO1','dynamicO1']
 info0_Oz = pd.read_csv('output/cfgInfo_case0_Oz.csv', delimiter=';', usecols = ['name', 'static_instructions', 'dynamic_instructions'])
 info0_Oz.columns = ['filename','staticOz','dynamicOz']
 
+info0_O2 = pd.read_csv('output/cfgInfo_case0_O2.csv', delimiter=';', usecols = ['name', 'static_instructions', 'dynamic_instructions'])
+info0_O2.columns = ['filename','staticO2','dynamicO2']
+
 data_merge_case_0 = pd.merge(info0_O0, info0_O1, how = 'inner')
 data_merge_case_0 = pd.merge(data_merge_case_0, info0_Oz, how = 'inner')
-data_merge_case_0.to_csv('output/CFGInfoStats_case_0-intbound', index = False)
+data_merge_case_0 = pd.merge(data_merge_case_0, info0_O2, how = 'inner')
+data_merge_case_0.to_csv('output/CFGInfoStats_bigarr', index = False)
 
 
 # ### Merge case 1 - big-arr
@@ -243,18 +249,21 @@ data_merge_case_0.to_csv('output/CFGInfoStats_case_0-intbound', index = False)
 # In[ ]:
 
 
-info1_O0 = pd.read_csv('output/cfgInfo_case1_O0.csv', delimiter=';', usecols = ['name', 'static_instructions', 'dynamic_instructions'])
-info1_O0.columns = ['filename','staticO0','dynamicO0']
+# info1_O0 = pd.read_csv('output/cfgInfo_case1_O0.csv', delimiter=';', usecols = ['name', 'static_instructions', 'dynamic_instructions'])
+# info1_O0.columns = ['filename','staticO0','dynamicO0']
 
-info1_O1 = pd.read_csv('output/cfgInfo_case1_O1.csv', delimiter=';', usecols = ['name', 'static_instructions', 'dynamic_instructions'])
-info1_O1.columns = ['filename','staticO1','dynamicO1']
+# info1_O1 = pd.read_csv('output/cfgInfo_case1_O1.csv', delimiter=';', usecols = ['name', 'static_instructions', 'dynamic_instructions'])
+# info1_O1.columns = ['filename','staticO1','dynamicO1']
 
-info1_Oz = pd.read_csv('output/cfgInfo_case1_Oz.csv', delimiter=';', usecols = ['name', 'static_instructions', 'dynamic_instructions'])
-info1_Oz.columns = ['filename','staticOz','dynamicOz']
+# info1_Oz = pd.read_csv('output/cfgInfo_case1_Oz.csv', delimiter=';', usecols = ['name', 'static_instructions', 'dynamic_instructions'])
+# info1_Oz.columns = ['filename','staticOz','dynamicOz']
 
-data_merge_case_1 = pd.merge(info1_O0, info1_O1, how = 'inner')
-data_merge_case_1 = pd.merge(data_merge_case_1, info1_Oz, how = 'inner')
-data_merge_case_1.to_csv('output/CFGInfoStats_case_1-bigarr', index = False)
+# info1_O2 = pd.read_csv('output/cfgInfo_case1_O2.csv', delimiter=';', usecols = ['name', 'static_instructions', 'dynamic_instructions'])
+# info1_O2.columns = ['filename','staticO2','dynamicO2']
+
+# data_merge_case_1 = pd.merge(info1_O0, info1_O1, how = 'inner')
+# data_merge_case_1 = pd.merge(data_merge_case_1, info1_Oz, how = 'inner')
+# data_merge_case_1.to_csv('output/CFGInfoStats_case_1-bigarr', index = False)
 
 
 # ### Merge case 2 - big-arr-10x
@@ -262,18 +271,18 @@ data_merge_case_1.to_csv('output/CFGInfoStats_case_1-bigarr', index = False)
 # In[ ]:
 
 
-info2_O0 = pd.read_csv('output/cfgInfo_case2_O0.csv', delimiter=';', usecols = ['name', 'static_instructions', 'dynamic_instructions'])
-info2_O0.columns = ['filename','staticO0','dynamicO0']
+# info2_O0 = pd.read_csv('output/cfgInfo_case2_O0.csv', delimiter=';', usecols = ['name', 'static_instructions', 'dynamic_instructions'])
+# info2_O0.columns = ['filename','staticO0','dynamicO0']
 
-info2_O1 = pd.read_csv('output/cfgInfo_case2_O1.csv', delimiter=';', usecols = ['name', 'static_instructions', 'dynamic_instructions'])
-info2_O1.columns = ['filename','staticO1','dynamicO1']
+# info2_O1 = pd.read_csv('output/cfgInfo_case2_O1.csv', delimiter=';', usecols = ['name', 'static_instructions', 'dynamic_instructions'])
+# info2_O1.columns = ['filename','staticO1','dynamicO1']
 
-info2_Oz = pd.read_csv('output/cfgInfo_case2_Oz.csv', delimiter=';', usecols = ['name', 'static_instructions', 'dynamic_instructions'])
-info2_Oz.columns = ['filename','staticOz','dynamicOz']
+# info2_Oz = pd.read_csv('output/cfgInfo_case2_Oz.csv', delimiter=';', usecols = ['name', 'static_instructions', 'dynamic_instructions'])
+# info2_Oz.columns = ['filename','staticOz','dynamicOz']
 
-data_merge_case_2 = pd.merge(info2_O0, info2_O1, how = 'inner')
-data_merge_case_2 = pd.merge(data_merge_case_2, info2_Oz, how = 'inner')
-data_merge_case_2.to_csv('output/CFGInfoStats_case_2-bigarr10x', index = False)
+# data_merge_case_2 = pd.merge(info2_O0, info2_O1, how = 'inner')
+# data_merge_case_2 = pd.merge(data_merge_case_2, info2_Oz, how = 'inner')
+# data_merge_case_2.to_csv('output/CFGInfoStats_case_2-bigarr10x', index = False)
 
 
 # In[ ]:
