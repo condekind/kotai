@@ -11,6 +11,7 @@ from pprint import pprint
 
 
 from kotai.constraints.genkonstrain import Konstrain
+from kotai.benchInfo.GetBenchInfo import GetBenchInfo
 from kotai.plugin.PrintDescriptors import PrintDescriptors
 from kotai.plugin.Jotai import Jotai
 from kotai.plugin.Clang import Clang
@@ -415,7 +416,7 @@ def _runCFGgrind(pArgs: BenchInfo) -> BenchInfo:
             
             if ket in pArgs.exitCodes and pArgs.exitCodes[ket] == failure:
                 continue
-            result, err = CFGgrind(genBinPath, pArgs.fnName).runcmd(str(pArgs.benchCases[cFilePath][ket].switchNum))
+            result, err = CFGgrind(genBinPath, pArgs.fnName).runcmd(str(pArgs.benchCases[cFilePath][ket].switchNum), ket)
             if err == failure:
                 pArgs.setExitCodes({ket: failure})
                 #pArgs.setBenchCasesError(cFilePath, ket)
@@ -485,7 +486,7 @@ def _createFinalBench(pArgs: BenchInfo) -> BenchInfo:
 
 def _start(self: Application, ) -> SysExitCode:
 
-    # For each directory passed with -i/--inputdir, do:
+    #For each directory passed with -i/--inputdir, do:
     for benchDir in self.inputBenchmarks:
 
         #self.optLevelList
@@ -521,7 +522,6 @@ def _start(self: Application, ) -> SysExitCode:
 
             # # benchDir/genBench <- clang
 
-
             resClangFsanitize = [r for r in pool.imap_unordered(_compileGenBenchFsanitize, clangInput, self.chunksize) if valid(r)]
             if not resClangFsanitize:
                 return '[Clang] No benchmarks with entry points compiled successfully with Fsanitize' 
@@ -539,6 +539,7 @@ def _start(self: Application, ) -> SysExitCode:
             if not resValgrind:
                 return '[Valgrind/CFGgrind] No binary executed successfully'
 
+            #printable return val to file
             with open('output/caseStdout.csv', 'w', encoding='utf-8') as caseStdoutFile:
                 nameAndCases = ['filename'] + [ket+opt for ket in self.ketList for opt in self.optLevels]
                 caseWriter = csv.DictWriter(caseStdoutFile, fieldnames=nameAndCases)
@@ -568,16 +569,10 @@ def _start(self: Application, ) -> SysExitCode:
             pool.close()
             pool.join()
 
-        # # TODO: Refine this
-        # ubCounter = {}
-        # ubCounter = Counter([(e.optLevel, e.exitCode.name) for e in resValgrind])
-        # try:
-        #     with open(self.ubstats, 'w+') as ofhandle:
-        #         ofhandle.write('Undefined behavior count:\n')
-        #         ofhandle.writelines([f'{v, c}' for v, c in ubCounter.items()])
-        #         ofhandle.write('\n')
-        # except Exception as e: logging.error(f'{e}')
 
+    GetBenchInfo(self.args.inputdir, self.optLevels, self.ketList).runcmd()
+
+    print(len(resFinal))
     return success
 
 
