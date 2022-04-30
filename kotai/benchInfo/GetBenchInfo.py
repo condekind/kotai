@@ -177,8 +177,11 @@ class GetBenchInfo():
 
 		caseStdoutFile = pd.read_csv('/home/cissakind/repos/kotai/output/caseStdout.csv', sep=',')
 		caseStdoutFile = caseStdoutFile.rename(columns={'filename': 'name'})
+
+		#remove / if input folder ends with /
 		caseStdoutFile['name'] = caseStdoutFile['name'].map(lambda a: remove_prefix(a, self.inputDir[0]+ '/'))
 
+		print(self.inputDir[0])
 		for k in self.ketList:
 			file = []
 			caseStdoutCols = []
@@ -190,6 +193,8 @@ class GetBenchInfo():
 			all_stats_case = reduce(lambda left,right: pd.merge(left,right,on=['name'],how='inner'), file)
 			all_stats_case.to_csv(outputPrefix + 'CFG_allOpt_' + str(k) + '.csv',index = False)
 
+			print(all_stats_case)
+			print(caseStdoutFile)
 			stats_and_output = pd.merge(all_stats_case, caseStdoutFile[['name'] + caseStdoutCols], how='inner')
 			stats_and_output.to_csv(outputPrefix + 'retVal_and_CFGstats' + str(k),index = False)
 

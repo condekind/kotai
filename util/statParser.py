@@ -29,7 +29,7 @@ NDEBUG = False
 
 
 # Path to the directory with the '.c' files and '.d' dirs
-benchmarkDir = '../../seed_fns'
+benchmarkDir = '../../exp_correl/maxDynbench_5000'
 
 # Patterns to look for in desired files
 patterns = {}
@@ -37,8 +37,8 @@ patterns = {}
 #case 0: int bounds
 patterns['case0_O0'] = '*.d/*_O0_0.info'
 patterns['case0_O1'] = '*.d/*_O1_0.info'
-patterns['case0_Oz'] = '*.d/*_Oz_0.info'
-patterns['case0_O2'] = '*.d/*_Oz_0.info'
+# patterns['case0_Oz'] = '*.d/*_Oz_0.info'
+patterns['case0_O2'] = '*.d/*_O2_0.info'
 
 #case 1: big arr
 # patterns['case1_O0'] = '*.d/*_O0_1.info'
@@ -232,15 +232,15 @@ info0_O0.columns = ['filename','staticO0','dynamicO0']
 info0_O1 = pd.read_csv('output/cfgInfo_case0_O1.csv', delimiter=';', usecols = ['name', 'static_instructions', 'dynamic_instructions'])
 info0_O1.columns = ['filename','staticO1','dynamicO1']
 
-info0_Oz = pd.read_csv('output/cfgInfo_case0_Oz.csv', delimiter=';', usecols = ['name', 'static_instructions', 'dynamic_instructions'])
-info0_Oz.columns = ['filename','staticOz','dynamicOz']
+# info0_Oz = pd.read_csv('output/cfgInfo_case0_Oz.csv', delimiter=';', usecols = ['name', 'static_instructions', 'dynamic_instructions'])
+# info0_Oz.columns = ['filename','staticOz','dynamicOz']
 
 info0_O2 = pd.read_csv('output/cfgInfo_case0_O2.csv', delimiter=';', usecols = ['name', 'static_instructions', 'dynamic_instructions'])
 info0_O2.columns = ['filename','staticO2','dynamicO2']
 
 data_merge_case_0 = pd.merge(info0_O0, info0_O1, how = 'inner')
-data_merge_case_0 = pd.merge(data_merge_case_0, info0_Oz, how = 'inner')
-data_merge_case_0 = pd.merge(data_merge_case_0, info0_O2, how = 'inner')
+# data_merge_case_0 = pd.merge(data_merge_case_0, info0_Oz, how = 'inner')
+data_merge_case_0 = pd.merge(data_merge_case_0, info0_O2, how = 'left')
 data_merge_case_0.to_csv('output/CFGInfoStats_bigarr', index = False)
 
 

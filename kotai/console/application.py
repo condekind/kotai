@@ -214,18 +214,71 @@ def _runKonstrain(pArgs: BenchInfo) -> BenchInfo:
     exitCodes: dict[Any, ExitCode] = {}
 
     for ket in ketList:
+        if ket != 'linked':
 
-        msg, err = Konstrain(descriptorPath, ket, cFileMetaDir / f'constraint_{ket}').runcmd()
+            msg, err = Konstrain(descriptorPath, ket, cFileMetaDir / f'constraint_{ket}').runcmd()
 
-        if err == failure:
-            exitCodes[ket] = failure
-            logging.error(f'Konstrain {ket} [{cFilePath}]:"{msg=}"')
-        else:
-            exitCodes[ket] = success
+            if err == failure:
+                exitCodes[ket] = failure
+                logging.error(f'Konstrain {ket} [{cFilePath}]:"{msg=}"')
+            else:
+                exitCodes[ket] = success
 
     pArgs.setExitCodes(exitCodes)
     return pArgs
 
+def _runLinkedList(pArgs: BenchInfo) -> BenchInfo:
+    descriptor             = pArgs.descriptor
+    cFilePath              = pArgs.cFilePath
+    cFileMetaDir           = cFilePath.with_suffix('.d')
+
+    exitCodes: dict[Any, ExitCode] = {}
+    rec_structs = []
+    func_rec_params = []
+    func_params = []
+
+    for line in descriptor.split('\n'):
+        if 'function' in line and 'struct' in line:
+            func_params = line.split('|')[1:]
+            func_params = [x.strip() for x in func_params if 'struct' in x and '*' in x and '**' not in x]
+
+        elif 'struct' in line:
+            struct_params = line.split('|')
+            struct_params = [x.strip() for x in struct_params]
+            name = struct_params[0]
+            for i in struct_params[1:]:
+                if '*' in i and name in i and '**' not in i:
+                    rec_structs += [name]
+                    break
+
+    for param in func_params:
+        for rec_struct in rec_structs:
+            if rec_struct in param:
+                func_rec_params += [param]
+    
+    if func_rec_params:
+        linked_constraint = ""
+        for rec_param in func_rec_params:
+            linked_constraint += 'linked(' + rec_param.split(' ')[0] + ', 100000) | '
+        linked_constraint = linked_constraint[:-2]
+    
+        try:
+            with open(str(cFileMetaDir) + "/constraint_linked", "w") as constraint_file:
+                try: 
+                    constraint_file.write(linked_constraint)
+                    constraint_file.close()
+                except Exception as e:
+                    return pArgs.Err('Linked', f'{e}')
+        except Exception as e:
+            return pArgs.Err('Linked', f'{e}')
+
+        exitCodes["linked"] = success
+    
+    else:
+        exitCodes["linked"] = failure
+
+    pArgs.setExitCodes(exitCodes)
+    return pArgs
 
 # Worker function mapped in a multiprocessing.Pool to run Jotai
 def _runJotai(pArgs: BenchInfo) -> BenchInfo:
@@ -270,13 +323,14 @@ def _runJotai(pArgs: BenchInfo) -> BenchInfo:
 
         # Jotai's result
         jotaiResult, err = Jotai(constraintsPath, descriptorPath).runcmd()
-
+        print(jotaiResult)
+        print(err)
         # If error: returns before creating the genbench file
         if err == failure:
             pArgs.setExitCodes({ket: failure})
             continue
 
-        #tratar erro
+        # If recursive, divide jotai results
         recFunction = ''
         match jotaiResult.split('/*RV_DELIM*/'):
             case [recFunc, decl]:  
@@ -317,12 +371,15 @@ def _runJotai(pArgs: BenchInfo) -> BenchInfo:
     genBenchPath = cFileMetaDir / f'{cFilePath.stem}.c'
     try:
         with open(genBenchPath, 'w', encoding='utf-8') as genBenchFile:
-            try: genBenchFile.write(genBuffer)
+            try: 
+                genBenchFile.write(genBuffer)
+                genBenchFile.close()
             except Exception as e:
                 return pArgs.Err('Jotai', f'{e}')
     except Exception as e:
         return pArgs.Err('Jotai', f'{e}')
 
+    # pArgs.setExitCodes({'jotai': success})
     return pArgs
 
 def _compileGenBenchFsanitize(pArgs: BenchInfo) -> BenchInfo:
@@ -421,7 +478,7 @@ def _runCFGgrind(pArgs: BenchInfo) -> BenchInfo:
                 pArgs.setExitCodes({ket: failure})
                 #pArgs.setBenchCasesError(cFilePath, ket)
                 continue
-            print(result)
+
             result = result.rstrip()
             if ket not in caseStdout:
                 # print only primitive types
@@ -513,10 +570,13 @@ def _start(self: Application, ) -> SysExitCode:
             if not resKons:
                 return '[Konstrain] No constraints were generated'
 
+            resLinked = [r for r in pool.imap_unordered(_runLinkedList, resKons, self.chunksize) if valid(r)]
             # benchDir/genBench.c <- Jotai
-            resJotai = [r for r in pool.imap_unordered(_runJotai, resKons, self.chunksize) if valid(r)]
+            
+            resJotai = [r for r in pool.imap_unordered(_runJotai, resLinked, self.chunksize) if valid(r)]
+            #print(resJotai)
             if not resJotai:
-                return '[Jotai] No benchmarks with entry points were generated'
+                print( '[Jotai] No benchmarks with entry points were generated')
 
             clangInput = resJotai
 
@@ -560,6 +620,7 @@ def _start(self: Application, ) -> SysExitCode:
             print('resValgrind:')
             pprint(resValgrind)
             print(sep)
+            
             resFinal = [r for r in pool.imap_unordered(_createFinalBench, resValgrind, self.chunksize) if valid(r)]
             if not resFinal:
                 return '[Final benchmark] No file created'
@@ -571,8 +632,6 @@ def _start(self: Application, ) -> SysExitCode:
 
 
     GetBenchInfo(self.args.inputdir, self.optLevels, self.ketList).runcmd()
-
-    print(len(resFinal))
     return success
 
 

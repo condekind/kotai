@@ -39,6 +39,7 @@ class Jotai():
         ] + [*args]
         logging.info(f'Running jotai with {self.constraintsPath=}, '
                      f'{self.descriptorPath=}')
+
         return runproc(proc_args, Jotai.timeout)
 
 
