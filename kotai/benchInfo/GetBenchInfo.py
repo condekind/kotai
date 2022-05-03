@@ -181,7 +181,7 @@ class GetBenchInfo():
 		#remove / if input folder ends with /
 		caseStdoutFile['name'] = caseStdoutFile['name'].map(lambda a: remove_prefix(a, self.inputDir[0]+ '/'))
 
-		print(self.inputDir[0])
+		# print(self.inputDir[0])
 		for k in self.ketList:
 			file = []
 			caseStdoutCols = []
@@ -193,10 +193,17 @@ class GetBenchInfo():
 			all_stats_case = reduce(lambda left,right: pd.merge(left,right,on=['name'],how='inner'), file)
 			all_stats_case.to_csv(outputPrefix + 'CFG_allOpt_' + str(k) + '.csv',index = False)
 
-			print(all_stats_case)
-			print(caseStdoutFile)
+			# print(all_stats_case)
+			# print(caseStdoutFile)
 			stats_and_output = pd.merge(all_stats_case, caseStdoutFile[['name'] + caseStdoutCols], how='inner')
 			stats_and_output.to_csv(outputPrefix + 'retVal_and_CFGstats' + str(k),index = False)
 
 			print(k + " : " + str(len(stats_and_output)))
 	# =========================================================================== #
+
+		final_file = []
+		for k in self.ketList:
+			final_file = final_file + [pd.read_csv( outputPrefix + 'retVal_and_CFGstats' + str(k) , sep=',')]
+		final = reduce(lambda left,right: pd.merge(left,right,on=['name'],how='outer'), final_file)
+		final.to_csv( outputPrefix + 'final.csv',index = False)
+		print(str(len(final)))	
