@@ -112,7 +112,7 @@ class GetBenchInfo():
 	def runcmd(self):
 
 		# Make sure the path leading to the last prefix directory exists
-		outputPrefix = '/home/cissakind/repos/kotai/util/output/'
+		outputPrefix = os.getcwd() + '/util/output/'
 
 		patterns = {}
 
@@ -174,8 +174,8 @@ class GetBenchInfo():
 						df[group].to_csv(Path(outputPrefix + f'CFGInfo_{group}.csv'), sep=csvSeparator, encoding='utf-8')
 					except Exception as e:
 						print(f'{e}')
-
-		caseStdoutFile = pd.read_csv('/home/cissakind/repos/kotai/output/caseStdout.csv', sep=',')
+		
+		caseStdoutFile = pd.read_csv(os.getcwd() +'/output/caseStdout.csv', sep=',')
 		caseStdoutFile = caseStdoutFile.rename(columns={'filename': 'name'})
 
 		#remove / if input folder ends with /

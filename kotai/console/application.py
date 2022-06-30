@@ -243,39 +243,64 @@ def _runLinkedList(pArgs: BenchInfo) -> BenchInfo:
             func_params = [x.strip() for x in func_params if 'struct' in x and '*' in x and '**' not in x]
 
         elif 'struct' in line:
+            count_rec_struct_members = 0
             struct_params = line.split('|')
             struct_params = [x.strip() for x in struct_params]
             name = struct_params[0]
             for i in struct_params[1:]:
                 if '*' in i and name in i and '**' not in i:
-                    rec_structs += [name]
-                    break
+                    count_rec_struct_members+=1
+            if(count_rec_struct_members):
+                rec_structs += [(name,count_rec_struct_members)]
 
     for param in func_params:
-        for rec_struct in rec_structs:
-            if rec_struct in param:
-                func_rec_params += [param]
-    
-    if func_rec_params:
-        linked_constraint = ""
-        for rec_param in func_rec_params:
-            linked_constraint += 'linked(' + rec_param.split(' ')[0] + ', 100000) | '
-        linked_constraint = linked_constraint[:-2]
-    
-        try:
-            with open(str(cFileMetaDir) + "/constraint_linked", "w") as constraint_file:
-                try: 
-                    constraint_file.write(linked_constraint)
-                    constraint_file.close()
-                except Exception as e:
-                    return pArgs.Err('Linked', f'{e}')
-        except Exception as e:
-            return pArgs.Err('Linked', f'{e}')
+        param_type = param.split(None, 1)[1]
+        param_type = param_type.replace('*', "").strip()
 
-        exitCodes["linked"] = success
+        for rec_struct,count_rec_struct_members in rec_structs:
+            if rec_struct == param_type:
+                func_rec_params += [(param, count_rec_struct_members)]
+
+
+    skel_list = [x for x in ['linked', 'dlinked', 'bintree'] if x in pArgs.ketList]
+    if func_rec_params:
+        for i in skel_list:
+            
+            const_string = {}
+            const_string["linked"] = ""
+            const_string["dlinked"] = ""
+            const_string["bintree"] = ""
+
+            for rec_param, count_rec_struct_members in func_rec_params:
+                # print(count_rec_struct_members)
+                if(i == "linked"):
+                    const_string["linked"] += 'linked(' + rec_param.split(' ')[0] + ', 10000) , '
+                elif(i == 'dlinked' and count_rec_struct_members == 2):
+                    const_string["dlinked"] += 'dlinked(' + rec_param.split(' ')[0] + ', 10000) , '
+                elif(i == 'bintree' and count_rec_struct_members == 2):
+                    const_string["bintree"] += 'btree(' + rec_param.split(' ')[0] + ', 10) , '
+            if const_string[i] != "":
+                # print(const_string[i])
+                const_string[i] = const_string[i][:-2]
+            
+                try:
+                    with open(str(cFileMetaDir) + "/constraint_" + i, "w") as constraint_file:
+                        try: 
+                            constraint_file.write(const_string[i])
+                            constraint_file.close()
+                        except Exception as e:
+                            return pArgs.Err(i, f'{e}')
+                except Exception as e:
+                    return pArgs.Err(i, f'{e}')
+
+                exitCodes[i] = success
+            else:
+                exitCodes[i] = failure
+
     
     else:
-        exitCodes["linked"] = failure
+        for i in skel_list:
+            exitCodes[i] = failure
 
     pArgs.setExitCodes(exitCodes)
     return pArgs
@@ -311,10 +336,10 @@ def _runJotai(pArgs: BenchInfo) -> BenchInfo:
     descriptorPath  = cFileMetaDir / 'descriptor'
 
     jotaiSwitchCase = ''
-    recFunction = ''
-    genSwitchList: list[tuple[int, KonstrainExecType, str, ExitCode]] = []
+    genSwitchList: list[tuple[int, KonstrainExecType, str, ExitCode, str]] = []
     usageCases: list[tuple[int, KonstrainExecType]] = []
 
+    
     for idx, ket in enumerate(pArgs.ketList):
         if ket in pArgs.exitCodes and pArgs.exitCodes[ket] == failure:
             continue
@@ -323,22 +348,27 @@ def _runJotai(pArgs: BenchInfo) -> BenchInfo:
 
         # Jotai's result
         jotaiResult, err = Jotai(constraintsPath, descriptorPath).runcmd()
-        print(jotaiResult)
+        print(cFilePath)
+        # print(jotaiResult)
         print(err)
+        print("\n\n\n")
         # If error: returns before creating the genbench file
         if err == failure:
             pArgs.setExitCodes({ket: failure})
             continue
 
-        # If recursive, divide jotai results
-        recFunction = ''
+        # If recursive, separate jotai results
+        
         match jotaiResult.split('/*RV_DELIM*/'):
             case [recFunc, decl]:  
-                recFunction, jotaiSwitchCase = recFunc, decl
-            case [decl]:
+                recFunction = recFunc;
                 jotaiSwitchCase = decl
 
-        genSwitchList += [(idx, ket, jotaiSwitchCase, err)]
+            case [decl]:
+                recFunction = ""
+                jotaiSwitchCase = decl
+
+        genSwitchList += [(idx, ket, jotaiSwitchCase, err, recFunction)]
         usageCases += [(idx, ket)]
 
     genBuffer += usage(usageCases)
@@ -349,20 +379,28 @@ def _runJotai(pArgs: BenchInfo) -> BenchInfo:
     if not genSwitchList:
         return pArgs.Err('Jotai', 'Jotai: Complete failure')
 
-    if recFunction:
-        pArgs.auxFunction = recFunction
-        genBuffer += recFunction
-    genBuffer += GenBenchTemplateMainBegin
-    genBuffer += GenBenchSwitchBegin
+    switchCases = ""
+    aux_functions = ""
+
+    aux_function_set = set()
     for sw in genSwitchList:
-        idx, ket, out, err = sw
-        genBuffer += genSwitch(idx, out, ket)
+        idx, ket, out, err, aux_func = sw
+        if(aux_func not in aux_function_set):
+            aux_function_set.add(aux_func)
+            aux_functions += aux_func
+
+        switchCases += genSwitch(idx, out, ket)
         if cFilePath in pArgs.benchCases:
-            pArgs.benchCases[cFilePath][ket] = CaseBenchInfo(idx, out)
+            pArgs.benchCases[cFilePath][ket] = CaseBenchInfo(idx, out, aux_func)
         else:
             ket: KonstrainExecType
-            cb = CaseBenchInfo(idx, out)
+            cb = CaseBenchInfo(idx, out, aux_func)
             pArgs.benchCases |= {cFilePath: {ket: cb}}
+
+    genBuffer += aux_functions
+    genBuffer += GenBenchTemplateMainBegin
+    genBuffer += GenBenchSwitchBegin
+    genBuffer += switchCases
 
     genBuffer += GenBenchSwitchEnd
     genBuffer += GenBenchTemplateMainEnd
@@ -395,6 +433,10 @@ def _compileGenBenchFsanitize(pArgs: BenchInfo) -> BenchInfo:
         _, err = Clang(opt, ofile=genBinPath, ifile=genBenchPath).runcmdFsanitize()
 
         if err == failure:
+            print(cFilePath)
+            print("compile error")
+            # print(err)
+            print("\n\n")
             pArgs.setExitCodes({opt: failure})
             continue
         optResList += [(opt, err), ]
@@ -422,7 +464,11 @@ def _runWithFsanitize(pArgs: BenchInfo) -> BenchInfo:
             if ket in pArgs.exitCodes and pArgs.exitCodes[ket] == failure:
                 continue
             result, err = CFGgrind(genBinPath, pArgs.fnName).runcmdFsanitize(str(pArgs.benchCases[cFilePath][ket].switchNum))
+        
             if err == failure:
+                print(ket, err)
+                print("run error")
+                print("\n\n")
                 pArgs.setExitCodes({ket: failure})
                 continue
 
@@ -473,8 +519,10 @@ def _runCFGgrind(pArgs: BenchInfo) -> BenchInfo:
             
             if ket in pArgs.exitCodes and pArgs.exitCodes[ket] == failure:
                 continue
+
             result, err = CFGgrind(genBinPath, pArgs.fnName).runcmd(str(pArgs.benchCases[cFilePath][ket].switchNum), ket)
             if err == failure:
+                print(result, err)
                 pArgs.setExitCodes({ket: failure})
                 #pArgs.setBenchCasesError(cFilePath, ket)
                 continue
@@ -482,7 +530,7 @@ def _runCFGgrind(pArgs: BenchInfo) -> BenchInfo:
             result = result.rstrip()
             if ket not in caseStdout:
                 # print only primitive types
-                if result and '{{struct}}' not in result and '{{other_type}}' not in result:
+                if result and '{{other_type}}' not in result:
                     caseStdout[ket+opt] = result
             
 
@@ -495,32 +543,40 @@ def _runCFGgrind(pArgs: BenchInfo) -> BenchInfo:
 
 def _createFinalBench(pArgs: BenchInfo) -> BenchInfo:
 
+
     cFilePath = pArgs.cFilePath
     cFileMetaDir    = cFilePath.with_suffix('.d')
     # decl vars
     #parse(self.descriptor())
     #newCaseNumber = 0
     switchBuffer = ""
+    aux_function = ""
     usageCases: list[tuple[int, KonstrainExecType]] = []
 
+    switch_count = 0
+    aux_function_set = set()
     for ket in pArgs.ketList:
         if ket in pArgs.exitCodes and pArgs.exitCodes[ket] == failure:
             print (f'[error]: ({cFilePath.name=}) {ket=}\n')
             continue
 
-        usageCases += [(pArgs.benchCases[cFilePath][ket].switchNum , ket)]
+        pArgs.benchCases[cFilePath][ket].switchNum = switch_count
+        usageCases += [(switch_count , ket)]
         print (f'[success]: ({cFilePath.name=}) {ket=}\n')
-        #switchBuffer += genSwitch(newCaseNumber, pArgs.benchCases[cFilePath][ket].content, ket)
-        switchBuffer += genSwitch(pArgs.benchCases[cFilePath][ket].switchNum , pArgs.benchCases[cFilePath][ket].content, ket)
+        
+        if(pArgs.benchCases[cFilePath][ket].auxFunction not in aux_function_set):
+            aux_function_set.add(pArgs.benchCases[cFilePath][ket].auxFunction)
+            aux_function += pArgs.benchCases[cFilePath][ket].auxFunction
 
-        #newCaseNumber += 1
+        switchBuffer += genSwitch(pArgs.benchCases[cFilePath][ket].switchNum , pArgs.benchCases[cFilePath][ket].content, ket)
+        switch_count += 1
 
     genBuffer = GenBenchTemplatePrefix
     genBuffer += randGenerator
     genBuffer += usage(usageCases)
     genBuffer += pArgs.benchFunction
     genBuffer += f'\n\n\n{sep}\n\n'
-    genBuffer += pArgs.auxFunction
+    genBuffer += aux_function
     genBuffer += f'\n\n\n{sep}\n\n'
     genBuffer += GenBenchTemplateMainBegin
     genBuffer += GenBenchSwitchBegin
@@ -570,9 +626,12 @@ def _start(self: Application, ) -> SysExitCode:
             if not resKons:
                 return '[Konstrain] No constraints were generated'
 
-            resLinked = [r for r in pool.imap_unordered(_runLinkedList, resKons, self.chunksize) if valid(r)]
-            # benchDir/genBench.c <- Jotai
-            
+            if('linked' in self.ketList or 'dlinked' in self.ketList or 'bintree' in self.ketList):
+                resLinked = [r for r in pool.imap_unordered(_runLinkedList, resKons, self.chunksize) if valid(r)]
+            else:
+                resLinked = resKons
+
+            # benchDir/genBench.c <- Jotai          
             resJotai = [r for r in pool.imap_unordered(_runJotai, resLinked, self.chunksize) if valid(r)]
             #print(resJotai)
             if not resJotai:
@@ -580,7 +639,7 @@ def _start(self: Application, ) -> SysExitCode:
 
             clangInput = resJotai
 
-            # # benchDir/genBench <- clang
+            # # # benchDir/genBench <- clang
 
             resClangFsanitize = [r for r in pool.imap_unordered(_compileGenBenchFsanitize, clangInput, self.chunksize) if valid(r)]
             if not resClangFsanitize:
@@ -588,6 +647,7 @@ def _start(self: Application, ) -> SysExitCode:
 
             resFsanitize = [r for r in pool.imap_unordered(_runWithFsanitize, resClangFsanitize, self.chunksize) if valid(r)]
             if not resFsanitize:
+                print('fsanitize')
                 return '[runFsanitize] No binary executed successfully'
 
             resClang = [r for r in pool.imap_unordered(_compileGenBench, resFsanitize, self.chunksize) if valid(r)]
@@ -597,6 +657,7 @@ def _start(self: Application, ) -> SysExitCode:
 
             resValgrind = [r for r in pool.imap_unordered(_runCFGgrind, resClang, self.chunksize) if valid(r)]
             if not resValgrind:
+                print('valgrind')
                 return '[Valgrind/CFGgrind] No binary executed successfully'
 
             #printable return val to file
@@ -622,6 +683,21 @@ def _start(self: Application, ) -> SysExitCode:
             print(sep)
             
             resFinal = [r for r in pool.imap_unordered(_createFinalBench, resValgrind, self.chunksize) if valid(r)]
+            caseNumbers = []
+
+            with open('output/switchCases.csv', 'w', encoding='utf-8') as switchCaseFile:
+                sCases = ['filename'] + [ket for ket in self.ketList]
+                sCaseWriter = csv.DictWriter(switchCaseFile, fieldnames=sCases)
+                for r in resFinal:
+                    caseNumbers += [{
+                    'filename' : str(r.cFilePath)
+                        } | { ket: r.benchCases[r.cFilePath][ket].switchNum if r.exitCodes[ket] != failure else 'NA'
+                        for ket in self.ketList
+                    }]
+                sCaseWriter.writeheader()
+                sCaseWriter.writerows(caseNumbers)
+
+
             if not resFinal:
                 return '[Final benchmark] No file created'
 

@@ -8,11 +8,9 @@
 /.venv
 
 /benchmarks
-/output
 /examples
 /archive
 /tmp
-/util/output
 
 konstrain
 

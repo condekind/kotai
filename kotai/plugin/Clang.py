@@ -15,7 +15,7 @@ class Clang():
         'clang': Path('clang'),
     }
 
-    timeout: float = 3.0
+    timeout: float = 5.0
 
     OptLevels = ['0','1','2','3','fast','z','s',]
 

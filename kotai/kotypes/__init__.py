@@ -58,14 +58,16 @@ def setLog(on: bool) -> None:
 
 # ---------------------------------- Konstrain ------------------------------ #
 
-KonstrainExecType = Literal['', 'all', 'int-bounds', 'big-arr', 'big-arr-10x', 'linked']
+KonstrainExecType = Literal['', 'all', 'int-bounds', 'big-arr', 'big-arr-10x', 'linked', 'dlinked', 'bintree']
 '''String literals representing the "ExecTypes" we accept from the user'''
 
 KonstrainExecTypes: Final[list[KonstrainExecType]] = [
     'int-bounds',
     'big-arr',
     'big-arr-10x',
-    'linked'
+    'linked',
+    'dlinked', 
+    'bintree',
 ]
 '''List of all non-abstract (implemented) KonstrainExecTypes'''
 
@@ -119,15 +121,18 @@ class CaseBenchInfo:
     __slots__ = (
                  'switchNum',
                  'content',
+                 'auxFunction',
                  )
 
     def __init__ (self,
                   switchNum: int,
                   content: str,
+                  auxFunction:str
                  ) -> None:
 
         self.switchNum: int = switchNum
         self.content: str   = content
+        self.auxFunction: str = auxFunction
 
 class BenchInfo:
     __slots__ = (
@@ -139,7 +144,6 @@ class BenchInfo:
                  'descriptor',
                  'benchCases',
                  'benchFunction',
-                 'auxFunction',
                  'caseStdout',
                  )
 
@@ -152,7 +156,6 @@ class BenchInfo:
                  descriptor: str                                                | None = None,
                  benchCases: dict[Path, dict[Any, CaseBenchInfo]]               | None = None,
                  benchFunction: str                                             | None = None,
-                 auxFunction: str                                               | None = None,
                  caseStdout: dict[KonstrainExecType, str]                       | None = None,
             ) -> None:
 
@@ -177,9 +180,6 @@ class BenchInfo:
 
         if _GUARD_benchFunction(benchFunction): self.benchFunction = benchFunction
         else: self.benchFunction = ''
-
-        if _GUARD_auxFunction(auxFunction):     self.auxFunction = auxFunction
-        else: self.auxFunction = ''
 
         if _GUARD_caseStdout(caseStdout):      self.caseStdout = caseStdout
         else: self.caseStdout = {}

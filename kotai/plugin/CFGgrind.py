@@ -13,12 +13,12 @@ class CFGgrind:
     # ---------------------------- Static attrs. ---------------------------- #
 
     exe: dict[str, Path] = {
-        'valgrind':        Path('valgrind'),
+        'valgrind':        Path('/usr/local/bin/valgrind'),
         'cfggrind_asmmap': Path('cfggrind_asmmap'),
         'cfggrind_info':   Path('cfggrind_info'),
     }
 
-    timeout: float = 3.0
+    timeout: float = 10.0
 
     # ---------------------------- Member attrs. ---------------------------- #
 
@@ -61,7 +61,7 @@ class CFGgrind:
             '--error-exitcode=1',
             f'{self.binPath}',
         ] + [args[0]]  # e.g., switch-case 'idx'
-        #print(f'valgrind: {proc_args}')
+        # print(f'valgrind: {proc_args}')
         return runproc(proc_args, timeout)
 
 
@@ -74,7 +74,7 @@ class CFGgrind:
             f'--instrs-map={self.mapFilePath}',
             f'{self.binPath}',
         ] + [args[0]]  # e.g., switch-case 'idx'
-        #print(f'valgrind: {proc_args}')
+        # print(f'valgrind: {proc_args}')
         return runproc(proc_args, timeout)
 
 
@@ -94,17 +94,18 @@ class CFGgrind:
     def runcmd(self, *args: str) -> CmdResult:
         cfggMapRes = self._run_cfggrind_asmmap(CFGgrind.timeout, *args)
         if cfggMapRes.err == failure:
-            print("map error")
+            # print("map error")
             return cfggMapRes
 
         valgrindMemcheckRes = self._run_valgrind_memcheck(CFGgrind.timeout, *args)
         if valgrindMemcheckRes.err == failure:
-            print(f"memcheck")
+            # print(valgrindMemcheckRes)
+            # print(f"memcheck")
             return valgrindMemcheckRes
 
         valgrindRes = self._run_valgrind(CFGgrind.timeout, *args)
         if valgrindRes.err == failure:
-            print("cfg valgrind error")
+            # print("cfg valgrind error")
             return valgrindRes
 
         cfggrindRes = self._run_cfggrind_info(CFGgrind.timeout, *args)
