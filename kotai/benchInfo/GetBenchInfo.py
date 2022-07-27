@@ -3,7 +3,7 @@
 
 import pandas as pd
 import os
-
+from os.path import exists
 from pathlib import Path
 from kotai.kotypes import OptLevel, KonstrainExecType
 from multiprocessing import Pool
@@ -146,26 +146,26 @@ class GetBenchInfo():
 			res = [self.parseInfo(f) for f in files]
 			infoGroups[group] = [self.flattenCfgInfo(r, desiredCols, group) for r in res if r]
 
-			print(infoGroups[group])
-			print('\n\n')
+			# print(infoGroups[group])
+			# print('\n\n')
 			tmpdf[group] = pd.DataFrame(infoGroups[group], columns=desiredCols)
 
-			print()
-			print(lineSepThick)
+			# print()
+			# print(lineSepThick)
 
 
 			df = {}
 			for group, infoFiles in infoGroups.items():
 				df[group] = tmpdf[group].set_index(['name'], verify_integrity=True)
 				if not len(df[group]): continue
-				print(f'\n{" "*((80-len(group))//2)}{group}:')
-				#display(df[group].head(5))
-				print()
-				print(df[group].dtypes)
-				print()
-				print(df[group].describe(include='all'))
-				print()
-				print(lineSepThin)
+				# print(f'\n{" "*((80-len(group))//2)}{group}:')
+				# #display(df[group].head(5))
+				# print()
+				# print(df[group].dtypes)
+				# print()
+				# print(df[group].describe(include='all'))
+				# print()
+				# print(lineSepThin)
 
 				# Warning: [ , . ; : ] are all allowed characters for linux filenames
 				csvSeparator = ','
@@ -173,7 +173,7 @@ class GetBenchInfo():
 					try:
 						df[group].to_csv(Path(outputPrefix + f'CFGInfo_{group}.csv'), sep=csvSeparator, encoding='utf-8')
 					except Exception as e:
-						print(f'{e}')
+						continue
 		
 		caseStdoutFile = pd.read_csv(os.getcwd() +'/output/caseStdout.csv', sep=',')
 		caseStdoutFile = caseStdoutFile.rename(columns={'filename': 'name'})
@@ -183,27 +183,30 @@ class GetBenchInfo():
 
 		# print(self.inputDir[0])
 		for k in self.ketList:
+
 			file = []
 			caseStdoutCols = []
 			
 			for o in self.optLevelList:
-				file = file + [pd.read_csv(outputPrefix + f'CFGInfo_case_{k}_{o}.csv', sep=',')]
-				caseStdoutCols = caseStdoutCols + [k + o]
-			
-			all_stats_case = reduce(lambda left,right: pd.merge(left,right,on=['name'],how='inner'), file)
-			all_stats_case.to_csv(outputPrefix + 'CFG_allOpt_' + str(k) + '.csv',index = False)
+				if(exists(outputPrefix + f'CFGInfo_case_{k}_{o}.csv')):
+					file = file + [pd.read_csv(outputPrefix + f'CFGInfo_case_{k}_{o}.csv', sep=',')]
+					caseStdoutCols = caseStdoutCols + [k + o]
+			if(file):
+				all_stats_case = reduce(lambda left,right: pd.merge(left,right,on=['name'],how='inner'), file)
+				all_stats_case.to_csv(outputPrefix + 'CFG_allOpt_' + str(k) + '.csv',index = False)
 
-			# print(all_stats_case)
-			# print(caseStdoutFile)
-			stats_and_output = pd.merge(all_stats_case, caseStdoutFile[['name'] + caseStdoutCols], how='inner')
-			stats_and_output.to_csv(outputPrefix + 'retVal_and_CFGstats' + str(k),index = False)
+				# print(all_stats_case)
+				# print(caseStdoutFile)
+				stats_and_output = pd.merge(all_stats_case, caseStdoutFile[['name'] + caseStdoutCols], how='inner')
+				stats_and_output.to_csv(outputPrefix + 'retVal_and_CFGstats' + str(k),index = False)
 
-			print(k + " : " + str(len(stats_and_output)))
+				print(k + " : " + str(len(stats_and_output)))
 	# =========================================================================== #
 
 		final_file = []
 		for k in self.ketList:
-			final_file = final_file + [pd.read_csv( outputPrefix + 'retVal_and_CFGstats' + str(k) , sep=',')]
+			if(exists(outputPrefix + 'retVal_and_CFGstats' + str(k) )):
+				final_file = final_file + [pd.read_csv( outputPrefix + 'retVal_and_CFGstats' + str(k) , sep=',')]
 		final = reduce(lambda left,right: pd.merge(left,right,on=['name'],how='outer'), final_file)
 		final.to_csv( outputPrefix + 'final.csv',index = False)
 		print(str(len(final)))	

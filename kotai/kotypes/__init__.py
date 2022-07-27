@@ -316,6 +316,38 @@ def runproc(proc_args: list[str], timeout: float,
 
     return out2file(res, ofpath, breakLines) if ofpath else res
 
+# --------------------------- Run kcc commands ---------------------------- #
+def runprocKcc(proc_args: list[str], timeout: float,
+            ofpath: Path | None = None, breakLines: bool = False) -> CmdResult:
+                                                              
+    try: proc = sp.Popen(proc_args, text=True, close_fds=True,
+                         stdout=sp.PIPE, stderr=sp.PIPE, encoding='utf-8')
+
+    # Common exceptions(s): OSError, ValueError
+    except Exception as e:
+        return logret(e)
+
+    # Common exceptions(s): TimeoutExpired
+    try: proc.communicate(timeout=timeout)
+    except Exception as e: logging.error(f'{e}:"{proc.args}"')
+
+    proc.kill()  # After this point, proc.returncode can't be None
+    out, err = proc.communicate()  # Results
+
+    if out: logging.debug(f'{out=}')
+    if err: logging.error(f'{err=}')
+
+    returnError = success
+    if 'error' in err or 'Undefined' in err or proc.returncode: 
+        print('error here')
+        returnError = failure
+
+    res = CmdResult(
+        out,
+        returnError
+    )
+
+    return out2file(res, ofpath, breakLines) if ofpath else res
 
 
 _T_co = TypeVar("_T_co", covariant=True)

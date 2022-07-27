@@ -8,6 +8,7 @@ runtimeInfoPlaceholder = '// [JOTAI-RUNTIME-INFO] //'
 GenBenchTemplatePrefix: str = (f'''{src_sep}\n'''
 '''
 // includes
+#include <math.h>
 #include "stdio.h"
 #include "stdlib.h"
 #include "time.h"
@@ -22,12 +23,12 @@ randGenerator: str = '''\n\n
 const unsigned rand_primes[JOTAI_NUM_RANDS_] = {179, 103, 479, 647, 229, 37, 271, 557, 263, 607, 18743, 50359, 21929, 48757, 98179, 12907, 52937, 64579, 49957, 52567, 507163, 149939, 412157, 680861, 757751};
 
 int next_i() {
-  static counter = 0;
-  return (-2 * (counter % 2) + 1) * rand_primes[(++counter)%JOTAI_NUM_RANDS_];
+  int counter = 0;
+  return rand_primes[(++counter)%JOTAI_NUM_RANDS_];
 }
 
 float next_f() {
-  static counter = 0;
+  int counter = 0;
   return rand_primes[(++counter)%JOTAI_NUM_RANDS_] / 757751.0F;
 } \n\n'''
 

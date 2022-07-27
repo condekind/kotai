@@ -4,7 +4,7 @@
 from pathlib import Path
 from shutil import which
 
-from kotai.kotypes import CmdResult, runproc, failure
+from kotai.kotypes import CmdResult, runproc, failure, runprocKcc
 
 # --------------------------------------------------------------------------- #
 
@@ -18,7 +18,7 @@ class CFGgrind:
         'cfggrind_info':   Path('cfggrind_info'),
     }
 
-    timeout: float = 10.0
+    timeout: float = 5.0
 
     # ---------------------------- Member attrs. ---------------------------- #
 
@@ -114,6 +114,8 @@ class CFGgrind:
 
         return valgrindRes
 
+    # --------------------------- Run with fsanitize ---------------------------- #
+
     def _run_sanitize(self, timeout: float, *args: str) -> CmdResult:
         proc_args = [
             f'{self.binPath}',
@@ -124,6 +126,19 @@ class CFGgrind:
     def runcmdFsanitize(self, *args: str) -> CmdResult:
         sanitize = self._run_sanitize(CFGgrind.timeout, *args)
         return sanitize
+
+    # --------------------------- Run with kcc ------------------------------ #
+
+    def _run_kcc(self, timeout: float, *args: str) -> CmdResult:
+        proc_args = [
+            f'{self.binPath}',
+        ] + [*args]  
+        return runprocKcc(proc_args, timeout)
+    
+
+    def runcmdKcc(self, *args: str) -> CmdResult:
+        kcc = self._run_kcc(10, *args)
+        return kcc
 
 
 # =========================================================================== #

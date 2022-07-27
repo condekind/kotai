@@ -3,7 +3,7 @@
 
 from pathlib import Path
 
-from kotai.kotypes import CmdResult, OptLevel, runproc
+from kotai.kotypes import CmdResult, OptLevel, runproc, runprocKcc
 
 # --------------------------------------------------------------------------- #
 
@@ -33,6 +33,8 @@ class Clang():
         self.ofile: Path   = ofile
         self.ifile: Path   = ifile
     # ----------------------------------------------------------------------- #
+
+    # --------------------------- Compile with clang ---------------------------- #
 
     def runcmd(self) -> CmdResult:
         if self.optLevel == 'O0':
@@ -68,6 +70,8 @@ class Clang():
                 f'{self.ifile}',
             ]
         return runproc(proc_args, Clang.timeout)
+
+    # --------------------------- Compile with fsanitize ---------------------------- #
 
     def runcmdFsanitize(self) -> CmdResult:
         if self.optLevel == 'O0':
@@ -107,5 +111,17 @@ class Clang():
                 f'{self.ifile}',
             ]
         return runproc(proc_args, Clang.timeout)
+
+# --------------------------- Compile with kcc ---------------------------- #
+
+    def runcmdKcc(self) -> CmdResult:
+        proc_args = [
+            'kcc',
+            f'-{self.optLevel}',
+            '-std=c11',
+            '-o', f'{self.ofile}',
+            f'{self.ifile}',
+        ]
+        return runprocKcc(proc_args, 30)
 
 # =========================================================================== #
