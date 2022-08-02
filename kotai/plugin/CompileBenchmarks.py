@@ -3,11 +3,11 @@
 
 from pathlib import Path
 
-from kotai.kotypes import CmdResult, OptLevel, runproc, runprocKcc
+from kotai.kotypes import CmdResult, OptLevel, runproc, compileprocKcc
 
 # --------------------------------------------------------------------------- #
 
-class Clang():
+class Compile():
 
     # ---------------------------- Static attrs. ---------------------------- #
 
@@ -15,7 +15,7 @@ class Clang():
         'clang': Path('clang'),
     }
 
-    timeout: float = 5.0
+    timeout: float = 10.0
 
     OptLevels = ['0','1','2','3','fast','z','s',]
 
@@ -39,7 +39,7 @@ class Clang():
     def runcmd(self) -> CmdResult:
         if self.optLevel == 'O0':
             proc_args = [
-                f'{Clang.exe["clang"]}',
+                f'{Compile.exe["clang"]}',
 
                 '-g',
                 '-ggdb',
@@ -56,7 +56,7 @@ class Clang():
             ]
         else:
             proc_args = [
-                f'{Clang.exe["clang"]}',
+                f'{Compile.exe["clang"]}',
                 '-g',
                 '-fno-omit-frame-pointer',
                 '-fno-inline',
@@ -69,14 +69,14 @@ class Clang():
                 '-o', f'{self.ofile}',
                 f'{self.ifile}',
             ]
-        return runproc(proc_args, Clang.timeout)
+        return runproc(proc_args, Compile.timeout)
 
     # --------------------------- Compile with fsanitize ---------------------------- #
 
     def runcmdFsanitize(self) -> CmdResult:
         if self.optLevel == 'O0':
             proc_args = [
-                f'{Clang.exe["clang"]}',
+                f'{Compile.exe["clang"]}',
 
                 '-g',
                 '-ggdb',
@@ -95,7 +95,7 @@ class Clang():
             ]
         else:
             proc_args = [
-                f'{Clang.exe["clang"]}',
+                f'{Compile.exe["clang"]}',
                 '-g',
                 '-fsanitize=address,undefined,signed-integer-overflow',
                 '-fno-sanitize-recover=all',
@@ -110,7 +110,7 @@ class Clang():
                 '-o', f'{self.ofile}',
                 f'{self.ifile}',
             ]
-        return runproc(proc_args, Clang.timeout)
+        return runproc(proc_args, Compile.timeout)
 
 # --------------------------- Compile with kcc ---------------------------- #
 
@@ -122,6 +122,6 @@ class Clang():
             '-o', f'{self.ofile}',
             f'{self.ifile}',
         ]
-        return runprocKcc(proc_args, 30)
+        return compileprocKcc(proc_args, 10)
 
 # =========================================================================== #

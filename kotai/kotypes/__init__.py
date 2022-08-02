@@ -319,31 +319,45 @@ def runproc(proc_args: list[str], timeout: float,
 # --------------------------- Run kcc commands ---------------------------- #
 def runprocKcc(proc_args: list[str], timeout: float,
             ofpath: Path | None = None, breakLines: bool = False) -> CmdResult:
-                                                              
-    try: proc = sp.Popen(proc_args, text=True, close_fds=True,
-                         stdout=sp.PIPE, stderr=sp.PIPE, encoding='utf-8')
 
-    # Common exceptions(s): OSError, ValueError
-    except Exception as e:
-        return logret(e)
+    returnError = success   
+                                             
+    try: proc = sp.run(' '.join(proc_args), shell = True, timeout=timeout, capture_output=True, text=True)
 
-    # Common exceptions(s): TimeoutExpired
-    try: proc.communicate(timeout=timeout)
-    except Exception as e: logging.error(f'{e}:"{proc.args}"')
+    
+    except sp.TimeoutExpired:
+        print('timeout')
+        res = CmdResult(
+            '',
+            failure
+        )
+        return out2file(res, ofpath, breakLines) if ofpath else res
 
-    proc.kill()  # After this point, proc.returncode can't be None
-    out, err = proc.communicate()  # Results
-
-    if out: logging.debug(f'{out=}')
-    if err: logging.error(f'{err=}')
-
-    returnError = success
-    if 'error' in err or 'Undefined' in err or proc.returncode: 
-        print('error here')
+    if 'Undefined' in proc.stderr or proc.returncode: 
+        print('undefined')
         returnError = failure
 
     res = CmdResult(
-        out,
+        proc.stderr,
+        returnError
+    )
+
+    return out2file(res, ofpath, breakLines) if ofpath else res
+
+def compileprocKcc(proc_args: list[str], timeout: float,
+            ofpath: Path | None = None, breakLines: bool = False) -> CmdResult:
+
+    returnError = success   
+                                             
+    proc = sp.run(' '.join(proc_args), shell = True, capture_output=True, text=True)
+
+
+    if 'error' in proc.stderr or proc.returncode: 
+        print('compile error')
+        returnError = failure
+
+    res = CmdResult(
+        proc.stderr,
         returnError
     )
 

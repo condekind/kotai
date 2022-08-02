@@ -48,8 +48,6 @@ class GetBenchInfo():
 
 		if NDEBUG:
 			return val
-
-		print(msg)
 		for arg in args:
 			print(arg)
 
@@ -120,21 +118,13 @@ class GetBenchInfo():
 			for k in self.ketList:
 				patterns['case_'+ k + '_' + o] = '*.d/*_' + o + '_' + k + '.info'
 
-		print(f'Globbing files from directory\n\n{self.inputDir}\n\nwith group -> pattern:\n')
-		_ = [print(f'{group}    ->    {pat}') for group, pat in patterns.items()]
-
 		infoFilePaths = {group: list(Path(self.inputDir[0]).glob(pattern)) for group, pattern in patterns.items()}
-		for group, pattern in patterns.items():
-			print(f'Group {group}:\t\tfound {len(infoFilePaths[group])} programs')
 
 		runInParallel = True  # Run in parallel?
-
 		# Number of cpu cores (remove the `// 2` to use all the cores)
 		nproc = len(os.sched_getaffinity(0)) // 2 if runInParallel else 1
-		print(f'Using {nproc} core(s)')
 
 		chunksize = 512
-		print(f'Each cpu core will work on chunks of {chunksize} tasks')
 
 		tmpdf = {}
 		infoGroups = {}
@@ -145,29 +135,14 @@ class GetBenchInfo():
 			desiredCols = ['name', 'static_instructions_' + group, 'dynamic_instructions_' + group]
 			res = [self.parseInfo(f) for f in files]
 			infoGroups[group] = [self.flattenCfgInfo(r, desiredCols, group) for r in res if r]
-
-			# print(infoGroups[group])
-			# print('\n\n')
 			tmpdf[group] = pd.DataFrame(infoGroups[group], columns=desiredCols)
-
-			# print()
-			# print(lineSepThick)
 
 
 			df = {}
 			for group, infoFiles in infoGroups.items():
 				df[group] = tmpdf[group].set_index(['name'], verify_integrity=True)
 				if not len(df[group]): continue
-				# print(f'\n{" "*((80-len(group))//2)}{group}:')
-				# #display(df[group].head(5))
-				# print()
-				# print(df[group].dtypes)
-				# print()
-				# print(df[group].describe(include='all'))
-				# print()
-				# print(lineSepThin)
 
-				# Warning: [ , . ; : ] are all allowed characters for linux filenames
 				csvSeparator = ','
 				for group in patterns.keys():
 					try:
@@ -195,8 +170,6 @@ class GetBenchInfo():
 				all_stats_case = reduce(lambda left,right: pd.merge(left,right,on=['name'],how='inner'), file)
 				all_stats_case.to_csv(outputPrefix + 'CFG_allOpt_' + str(k) + '.csv',index = False)
 
-				# print(all_stats_case)
-				# print(caseStdoutFile)
 				stats_and_output = pd.merge(all_stats_case, caseStdoutFile[['name'] + caseStdoutCols], how='inner')
 				stats_and_output.to_csv(outputPrefix + 'retVal_and_CFGstats' + str(k),index = False)
 
@@ -209,4 +182,4 @@ class GetBenchInfo():
 				final_file = final_file + [pd.read_csv( outputPrefix + 'retVal_and_CFGstats' + str(k) , sep=',')]
 		final = reduce(lambda left,right: pd.merge(left,right,on=['name'],how='outer'), final_file)
 		final.to_csv( outputPrefix + 'final.csv',index = False)
-		print(str(len(final)))	
+		print(str(len(final)) + ' benchmarks were generated')	

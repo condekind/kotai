@@ -8,7 +8,6 @@ runtimeInfoPlaceholder = '// [JOTAI-RUNTIME-INFO] //'
 GenBenchTemplatePrefix: str = (f'''{src_sep}\n'''
 '''
 // includes
-#include <math.h>
 #include "stdio.h"
 #include "stdlib.h"
 #include "time.h"
@@ -37,12 +36,10 @@ def usage(usageCases:list[tuple[int, KonstrainExecType]]):
     return (f'''
 // Usage menu
 void usage() {{
-    fprintf(stderr, "Usage:\\n\\
-    prog [OPTIONS] [ARGS]\\n\\
+    printf("%s", "Usage:\\n\\
+    prog [ARGS]\\n\\
 \\nARGS:\\n\\
 {f''.join([f'    {idx:>4}            {line}{chr(92)}n{chr(92)}{chr(10)}' for idx, line in usageCases])}\\n\\
-    OPTIONS:\\n\\
-    -t              (NOT IMPLEMENTED YET) enable time measurement\\n\\n\\
 ");
 
 }}

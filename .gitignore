@@ -29,5 +29,6 @@ __pycache__
 
 *.map
 *.cfg
+*.csv
 final.csv
 vgcore*

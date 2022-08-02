@@ -15,8 +15,8 @@ from kotai.constraints.basicConstraints import _getBasicConstraints
 from kotai.benchInfo.GetBenchInfo import GetBenchInfo
 from kotai.plugin.PrintDescriptors import PrintDescriptors
 from kotai.plugin.Jotai import Jotai
-from kotai.plugin.Clang import Clang
-from kotai.plugin.CFGgrind import CFGgrind
+from kotai.plugin.CompileBenchmarks import Compile
+from kotai.plugin.RunBenchmarks import Run
 from kotai.templates.benchmark import GenBenchTemplatePrefix, randGenerator, GenBenchTemplateMainBegin, GenBenchTemplateMainEnd, genSwitch, GenBenchSwitchBegin, GenBenchSwitchEnd, usage
 from kotai.kotypes import BenchInfo, CaseBenchInfo, Failure, ExitCode, LogThen, OptLevel, OptLevels, SysExitCode, KonstrainExecType, KonstrainExecTypes, setLog, success, failure, valid
 from kotai.logconf import logFmt, sep
@@ -383,19 +383,16 @@ def _compileGenBenchFsanitize(pArgs: BenchInfo) -> BenchInfo:
     for opt in optLevelList:
         genBinPath   = cFileMetaDir / f'{cFilePath.stem}_fsanitize_{opt}'
         # Compiles the genBench into a binary
-        _, err = Clang(opt, ofile=genBinPath, ifile=genBenchPath).runcmdFsanitize()
+        _, err = Compile(opt, ofile=genBinPath, ifile=genBenchPath).runcmdFsanitize()
 
         if err == failure:
-            print(cFilePath)
             print("compile error")
-            # print(err)
-            print("\n\n")
             pArgs.setExitCodes({opt: failure})
             continue
         optResList += [(opt, err), ]
 
     if not optResList:
-        return pArgs.Err('Clang', 'Clang: Fsanitize Complete failure')
+        return pArgs.Err('Compile', 'Compile: Fsanitize Complete failure')
     return pArgs
 
 
@@ -417,12 +414,10 @@ def _runWithFsanitize(pArgs: BenchInfo) -> BenchInfo:
             
             if ket in pArgs.exitCodes and pArgs.exitCodes[ket] == failure:
                 continue
-            result, err = CFGgrind(genBinPath, pArgs.fnName).runcmdFsanitize(str(pArgs.benchCases[cFilePath][ket].switchNum))
+            result, err = Run(genBinPath, pArgs.fnName).runcmdFsanitize(str(pArgs.benchCases[cFilePath][ket].switchNum))
         
             if err == failure:
-                print(ket, err)
                 print("run error")
-                print("\n\n")
                 pArgs.setExitCodes({ket: failure})
                 continue
 
@@ -443,7 +438,7 @@ def _compileGenBench(pArgs: BenchInfo) -> BenchInfo:
     for opt in optLevelList:
         genBinPath   = cFileMetaDir / f'{cFilePath.stem}_{opt}'
         # Compiles the genBench into a binary
-        _, err = Clang(opt, ofile=genBinPath, ifile=genBenchPath).runcmd()
+        _, err = Compile(opt, ofile=genBinPath, ifile=genBenchPath).runcmd()
 
         if err == failure:
             pArgs.setExitCodes({opt: failure})
@@ -451,7 +446,7 @@ def _compileGenBench(pArgs: BenchInfo) -> BenchInfo:
         optResList += [(opt, err), ]
 
     if not optResList:
-        return pArgs.Err('Clang', 'Clang: Complete failure')
+        return pArgs.Err('Compile', 'Compile: Complete failure')
     return pArgs
 
 
@@ -475,9 +470,9 @@ def _runCFGgrind(pArgs: BenchInfo) -> BenchInfo:
             if ket in pArgs.exitCodes and pArgs.exitCodes[ket] == failure:
                 continue
 
-            result, err = CFGgrind(genBinPath, pArgs.fnName).runcmd(str(pArgs.benchCases[cFilePath][ket].switchNum), ket)
+            result, err = Run(genBinPath, pArgs.fnName).runcmd(str(pArgs.benchCases[cFilePath][ket].switchNum), ket)
             if err == failure:
-                print(result, err)
+                print('CFG error')
                 pArgs.setExitCodes({ket: failure})
                 #pArgs.setBenchCasesError(cFilePath, ket)
                 continue
@@ -507,7 +502,7 @@ def _compileKcc(pArgs: BenchInfo) -> BenchInfo:
     for opt in optLevelList:
         genBinPath   = cFileMetaDir / f'{cFilePath.stem}_kcc_{opt}'
         # Compiles the genBench into a binary
-        _, err = Clang(opt, ofile=genBinPath, ifile=genBenchPath).runcmdKcc()
+        _, err = Compile(opt, ofile=genBinPath, ifile=genBenchPath).runcmdKcc()
 
         if err == failure:
             print('kcc compile error')
@@ -537,12 +532,10 @@ def _runWithKcc(pArgs: BenchInfo) -> BenchInfo:
             
             if ket in pArgs.exitCodes and pArgs.exitCodes[ket] == failure:
                 continue
-            result, err = CFGgrind(genBinPath, pArgs.fnName).runcmdKcc(str(pArgs.benchCases[cFilePath][ket].switchNum))
+            result, err = Run(genBinPath, pArgs.fnName).runcmdKcc(str(pArgs.benchCases[cFilePath][ket].switchNum))
             
             if err == failure:
-                print(ket, err)
                 print("kcc run error")
-                print("\n\n")
                 pArgs.setExitCodes({ket: failure})
                 continue
 
@@ -553,7 +546,7 @@ def _runWithKcc(pArgs: BenchInfo) -> BenchInfo:
     return pArgs
 
 
-# Generate final benchmark (filter out errors and undefined behavior)
+# Generate final benchmark (filter out errors and undefined behaviour)
 def _createFinalBench(pArgs: BenchInfo) -> BenchInfo:
 
 
@@ -567,12 +560,11 @@ def _createFinalBench(pArgs: BenchInfo) -> BenchInfo:
     aux_function_set = set()
     for ket in pArgs.ketList:
         if ket in pArgs.exitCodes and pArgs.exitCodes[ket] == failure:
-            print (f'[error]: ({cFilePath.name=}) {ket=}\n')
             continue
 
         pArgs.benchCases[cFilePath][ket].switchNum = switch_count
         usageCases += [(switch_count , ket)]
-        print (f'[success]: ({cFilePath.name=}) {ket=}\n')
+
         
         if(pArgs.benchCases[cFilePath][ket].auxFunction not in aux_function_set):
             aux_function_set.add(pArgs.benchCases[cFilePath][ket].auxFunction)
@@ -603,7 +595,8 @@ def _createFinalBench(pArgs: BenchInfo) -> BenchInfo:
                 return pArgs.Err('JotaiFinal', f'{e}')
     except Exception as e:
         return pArgs.Err('JotaiFinal', f'{e}')
-    print("worked \n")
+    
+    print("worked : " + str(cFilePath.name))
     return pArgs
 
 
@@ -647,22 +640,32 @@ def _start(self: Application, ) -> SysExitCode:
             if not resJotai:
                 print( '[Jotai] No benchmarks with entry points were generated')
 
-            clangInput = resJotai
-
             # ---------------------------- Compile and run with Fsanitize ---------------------------- #
 
-            resClangFsanitize = [r for r in pool.imap_unordered(_compileGenBenchFsanitize, clangInput, self.chunksize) if valid(r)]
+            resClangFsanitize = [r for r in pool.imap_unordered(_compileGenBenchFsanitize, resJotai, self.chunksize) if valid(r)]
             if not resClangFsanitize:
-                return '[Clang] No benchmarks with entry points compiled successfully with Fsanitize' 
+                return '[Compile] No benchmarks with entry points compiled successfully with Fsanitize' 
 
             resFsanitize = [r for r in pool.imap_unordered(_runWithFsanitize, resClangFsanitize, self.chunksize) if valid(r)]
             if not resFsanitize:
                 print('fsanitize')
                 return '[runFsanitize] No binary executed successfully'
 
+
+            # ---------------------------- Compile and run with Clang and valgrind ---------------------------- #
+
+            resClang = [r for r in pool.imap_unordered(_compileGenBench, resFsanitize, self.chunksize) if valid(r)]
+
+            if not resClang:
+                return '[Clang] No benchmarks with entry points compiled successfully'
+
+            resValgrind = [r for r in pool.imap_unordered(_runCFGgrind, resClang, self.chunksize) if valid(r)]
+            if not resValgrind:
+                print('valgrind')
+                return '[Valgrind] No binary executed successfully'
             # ---------------------------- Compile and run with Kcc ---------------------------- #  
 
-            resCompileKcc = [r for r in pool.imap_unordered(_compileKcc, resFsanitize, self.chunksize) if valid(r)]
+            resCompileKcc = [r for r in pool.imap_unordered(_compileKcc, resValgrind, self.chunksize) if valid(r)]
 
             if not resCompileKcc:
                 return '[Kcc] No benchmarks with entry points compiled successfully'
@@ -672,21 +675,9 @@ def _start(self: Application, ) -> SysExitCode:
                 print('kcc')
                 return '[kcc] No binary executed successfully'
 
-            # ---------------------------- Compile and run with Clang and valgrind ---------------------------- #
-
-            resClang = [r for r in pool.imap_unordered(_compileGenBench, resRunKcc, self.chunksize) if valid(r)]
-
-            if not resClang:
-                return '[Clang] No benchmarks with entry points compiled successfully'
-
-            resValgrind = [r for r in pool.imap_unordered(_runCFGgrind, resClang, self.chunksize) if valid(r)]
-            if not resValgrind:
-                print('valgrind')
-                return '[Valgrind/CFGgrind] No binary executed successfully'
-
             # ---------------------------- Gen final benchmark ---------------------------- #
 
-            resFinal = [r for r in pool.imap_unordered(_createFinalBench, resValgrind, self.chunksize) if valid(r)]
+            resFinal = [r for r in pool.imap_unordered(_createFinalBench, resRunKcc, self.chunksize) if valid(r)]
             if not resFinal:
                 return '[Final benchmark] No file created'
             else:
@@ -729,7 +720,7 @@ def _start(self: Application, ) -> SysExitCode:
             pool.close()
             pool.join()
 
-
+    print('\n\nResults: \n')
     GetBenchInfo(self.args.inputdir, self.optLevels, self.ketList).runcmd()
     return success
 

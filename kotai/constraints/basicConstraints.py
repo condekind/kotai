@@ -83,8 +83,8 @@ class Descriptor:
 
 
 def _getBasicConstraints(pArgs: BenchInfo, constraintType: KonstrainExecType) -> BenchInfo:
+	
 	d = Descriptor(pArgs)
-
 	if constraintType == "int-bounds":
 		return d.printIntBounds()
 	elif constraintType == "big-arr":

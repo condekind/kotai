@@ -8,7 +8,7 @@ from kotai.kotypes import CmdResult, runproc, failure, runprocKcc
 
 # --------------------------------------------------------------------------- #
 
-class CFGgrind:
+class Run:
 
     # ---------------------------- Static attrs. ---------------------------- #
 
@@ -43,11 +43,13 @@ class CFGgrind:
 
         ''' path/to/benchName.d/benchName_optFlag.map '''
         self.cfggInfoOutPath: Path = Path(str(self.binPath) + '.info')
-    # ----------------------------------------------------------------------- #
+
+
+    # ---------------------------Run Valgrinf and CFGGring-------------------------------- #
 
     def _run_cfggrind_asmmap(self, timeout: float, *args: str) -> CmdResult:
         proc_args = [
-            f'{CFGgrind.exe["cfggrind_asmmap"]}',
+            f'{Run.exe["cfggrind_asmmap"]}',
             f'{self.binPath}',
         ]
         #print(f'cfgg_asmmap: {proc_args}')
@@ -56,7 +58,7 @@ class CFGgrind:
 
     def _run_valgrind_memcheck(self, timeout: float, *args: str) -> CmdResult:
         proc_args = [
-            f'{CFGgrind.exe["valgrind"]}',
+            f'{Run.exe["valgrind"]}',
             '--tool=memcheck',
             '--error-exitcode=1',
             f'{self.binPath}',
@@ -68,7 +70,7 @@ class CFGgrind:
     def _run_valgrind(self, timeout: float, *args: str) -> CmdResult:
         self.cfgOutFilePath = Path(str(self.cfgOutFilePath).replace('.cfg', f'_{args[1]}.cfg', 1))
         proc_args = [
-            f'{CFGgrind.exe["valgrind"]}',
+            f'{Run.exe["valgrind"]}',
             '--tool=cfggrind',
             f'--cfg-outfile={self.cfgOutFilePath}',
             f'--instrs-map={self.mapFilePath}',
@@ -81,7 +83,7 @@ class CFGgrind:
     def _run_cfggrind_info(self, timeout: float, *args: str) -> CmdResult:
         self.cfggInfoOutPath = Path(str(self.cfggInfoOutPath).replace('.info', f'_{args[1]}.info', 1))
         proc_args = [
-            f'{CFGgrind.exe["cfggrind_info"]}',
+            f'{Run.exe["cfggrind_info"]}',
             '-f', f'{Path(self.binPath).name}::{self.benchFn}',
             '-s', 'functions',
             '-m', 'json',
@@ -92,23 +94,23 @@ class CFGgrind:
 
 
     def runcmd(self, *args: str) -> CmdResult:
-        cfggMapRes = self._run_cfggrind_asmmap(CFGgrind.timeout, *args)
+        cfggMapRes = self._run_cfggrind_asmmap(Run.timeout, *args)
         if cfggMapRes.err == failure:
             # print("map error")
             return cfggMapRes
 
-        valgrindMemcheckRes = self._run_valgrind_memcheck(CFGgrind.timeout, *args)
+        valgrindMemcheckRes = self._run_valgrind_memcheck(Run.timeout, *args)
         if valgrindMemcheckRes.err == failure:
             # print(valgrindMemcheckRes)
             # print(f"memcheck")
             return valgrindMemcheckRes
 
-        valgrindRes = self._run_valgrind(CFGgrind.timeout, *args)
+        valgrindRes = self._run_valgrind(Run.timeout, *args)
         if valgrindRes.err == failure:
             # print("cfg valgrind error")
             return valgrindRes
 
-        cfggrindRes = self._run_cfggrind_info(CFGgrind.timeout, *args)
+        cfggrindRes = self._run_cfggrind_info(Run.timeout, *args)
         if cfggrindRes.err == failure:
             return cfggrindRes
 
@@ -124,7 +126,7 @@ class CFGgrind:
     
 
     def runcmdFsanitize(self, *args: str) -> CmdResult:
-        sanitize = self._run_sanitize(CFGgrind.timeout, *args)
+        sanitize = self._run_sanitize(Run.timeout, *args)
         return sanitize
 
     # --------------------------- Run with kcc ------------------------------ #
