@@ -18,7 +18,7 @@ class Run:
         'cfggrind_info':   Path('cfggrind_info'),
     }
 
-    timeout: float = 5.0
+    timeout: float = 10.0
 
     # ---------------------------- Member attrs. ---------------------------- #
 

@@ -665,19 +665,19 @@ def _start(self: Application, ) -> SysExitCode:
                 return '[Valgrind] No binary executed successfully'
             # ---------------------------- Compile and run with Kcc ---------------------------- #  
 
-            resCompileKcc = [r for r in pool.imap_unordered(_compileKcc, resValgrind, self.chunksize) if valid(r)]
+            # resCompileKcc = [r for r in pool.imap_unordered(_compileKcc, resValgrind, self.chunksize) if valid(r)]
 
-            if not resCompileKcc:
-                return '[Kcc] No benchmarks with entry points compiled successfully'
+            # if not resCompileKcc:
+            #     return '[Kcc] No benchmarks with entry points compiled successfully'
 
-            resRunKcc = [r for r in pool.imap_unordered(_runWithKcc, resCompileKcc, self.chunksize) if valid(r)]
-            if not resRunKcc:
-                print('kcc')
-                return '[kcc] No binary executed successfully'
+            # resRunKcc = [r for r in pool.imap_unordered(_runWithKcc, resCompileKcc, self.chunksize) if valid(r)]
+            # if not resRunKcc:
+            #     print('kcc')
+            #     return '[kcc] No binary executed successfully'
 
             # ---------------------------- Gen final benchmark ---------------------------- #
 
-            resFinal = [r for r in pool.imap_unordered(_createFinalBench, resRunKcc, self.chunksize) if valid(r)]
+            resFinal = [r for r in pool.imap_unordered(_createFinalBench, resValgrind, self.chunksize) if valid(r)]
             if not resFinal:
                 return '[Final benchmark] No file created'
             else:

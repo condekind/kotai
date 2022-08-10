@@ -29,7 +29,11 @@ class Descriptor:
 			if 'function' in line:
 				func_params = line.split('|')[1:]
 				for param in func_params:
-					param_name, param_type = param.split(None, 1)
+					try:
+						param_name, param_type = param.split(None, 1)
+					except (ValueError):
+						continue
+						
 					param_name.strip()
 					param_type.strip()
 					if(isInteger(param_type)):
