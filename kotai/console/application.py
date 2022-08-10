@@ -617,7 +617,7 @@ def _start(self: Application, ) -> SysExitCode:
             return success
 
 
-        with Pool(self.nproc, maxtasksperchild=self.mtpc) as pool:
+        with Pool(self.nproc) as pool:
 
             # ---------------------------- Gen descriptor. ---------------------------- #
             resGenDesc = [r for r in pool.imap_unordered(_genDescriptor, pArgs, self.chunksize) if valid(r)]

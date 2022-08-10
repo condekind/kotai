@@ -322,7 +322,9 @@ def runprocKcc(proc_args: list[str], timeout: float,
 
     returnError = success   
                                              
-    try: proc = sp.run(' '.join(proc_args), shell = True, timeout=timeout, capture_output=True, text=True)
+    try: proc = sp.run(proc_args,  # no shell wrapper
+            timeout=timeout, stdout=sp.PIPE, stderr = sp.PIPE,
+    encoding='utf8')
 
     
     except sp.TimeoutExpired:
@@ -333,27 +335,8 @@ def runprocKcc(proc_args: list[str], timeout: float,
         )
         return out2file(res, ofpath, breakLines) if ofpath else res
 
-    if 'Undefined' in proc.stderr or proc.returncode: 
+    if 'Undefined' in proc.stderr or 'error' in proc.stderr or proc.returncode: 
         print('undefined')
-        returnError = failure
-
-    res = CmdResult(
-        proc.stderr,
-        returnError
-    )
-
-    return out2file(res, ofpath, breakLines) if ofpath else res
-
-def compileprocKcc(proc_args: list[str], timeout: float,
-            ofpath: Path | None = None, breakLines: bool = False) -> CmdResult:
-
-    returnError = success   
-                                             
-    proc = sp.run(' '.join(proc_args), shell = True, capture_output=True, text=True)
-
-
-    if 'error' in proc.stderr or proc.returncode: 
-        print('compile error')
         returnError = failure
 
     res = CmdResult(

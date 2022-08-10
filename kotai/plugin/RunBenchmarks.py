@@ -139,7 +139,7 @@ class Run:
     
 
     def runcmdKcc(self, *args: str) -> CmdResult:
-        kcc = self._run_kcc(10, *args)
+        kcc = self._run_kcc(1, *args)
         return kcc
 
 

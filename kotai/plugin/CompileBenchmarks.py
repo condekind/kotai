@@ -3,7 +3,7 @@
 
 from pathlib import Path
 
-from kotai.kotypes import CmdResult, OptLevel, runproc, compileprocKcc
+from kotai.kotypes import CmdResult, OptLevel, runproc, runprocKcc
 
 # --------------------------------------------------------------------------- #
 
@@ -122,6 +122,6 @@ class Compile():
             '-o', f'{self.ofile}',
             f'{self.ifile}',
         ]
-        return compileprocKcc(proc_args, 10)
+        return runprocKcc(proc_args, 10)
 
 # =========================================================================== #

@@ -154,7 +154,13 @@ class GetBenchInfo():
 		caseStdoutFile = caseStdoutFile.rename(columns={'filename': 'name'})
 
 		#remove / if input folder ends with /
-		caseStdoutFile['name'] = caseStdoutFile['name'].map(lambda a: remove_prefix(a, self.inputDir[0]+ '/'))
+		if self.inputDir[0][-1] == '/':
+			prefix = self.inputDir[0]
+		else:
+			prefix = self.inputDir[0]+ '/'
+
+		caseStdoutFile['name'] = caseStdoutFile['name'].map(lambda a: remove_prefix(a, prefix))
+
 
 		# print(self.inputDir[0])
 		for k in self.ketList:
