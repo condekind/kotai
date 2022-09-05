@@ -58,7 +58,7 @@ def setLog(on: bool) -> None:
 
 # ---------------------------------- Konstrain ------------------------------ #
 
-KonstrainExecType = Literal['', 'all', 'int-bounds', 'big-arr', 'big-arr-10x', 'linked', 'dlinked', 'bintree']
+KonstrainExecType = Literal['', 'all', 'int-bounds', 'big-arr', 'big-arr-10x', 'linked', 'dlinked', 'bintree', 'empty']
 '''String literals representing the "ExecTypes" we accept from the user'''
 
 KonstrainExecTypes: Final[list[KonstrainExecType]] = [
@@ -68,6 +68,7 @@ KonstrainExecTypes: Final[list[KonstrainExecType]] = [
     'linked',
     'dlinked', 
     'bintree',
+    'empty'
 ]
 '''List of all non-abstract (implemented) KonstrainExecTypes'''
 

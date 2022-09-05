@@ -196,11 +196,15 @@ def _runBasicConstraints(pArgs: BenchInfo) -> BenchInfo:
     emptyDescriptor = False
     exitCodes: dict[Any, ExitCode] = {}
 
-    basicConstraints = [x for x in ['int-bounds', 'big-arr', 'big-arr-10x'] if x in pArgs.ketList]
+    basicConstraints = [x for x in ['int-bounds', 'big-arr', 'big-arr-10x', 'empty'] if x in pArgs.ketList]
     for c in basicConstraints:
-        desc = _getBasicConstraints(pArgs, c)
+        if c == 'empty':
+            desc = ''
+            emptyDescriptor = True
+        else:
+            desc = _getBasicConstraints(pArgs, c)
 
-        if desc or not emptyDescriptor:
+        if desc or emptyDescriptor:
             try:
                 with open(str(cFileMetaDir) + "/constraint_" + c, "w") as constraint_file:
                     try: 
@@ -214,7 +218,7 @@ def _runBasicConstraints(pArgs: BenchInfo) -> BenchInfo:
                 continue
 
             exitCodes[c] = success
-            emptyDescriptor = True
+            emptyDescriptor = False
         else:
             exitCodes[c] = failure
 
@@ -306,6 +310,7 @@ def _runJotai(pArgs: BenchInfo) -> BenchInfo:
 
         # If error: returns before creating the genbench file
         if err == failure:
+            print('error ' + ket)
             pArgs.setExitCodes({ket: failure})
             continue
 
